@@ -26,13 +26,17 @@
     <p>&nbsp;</p>
     <p class="content"> 该网页用于测试 </p>
     <div class="main">
-		<div class="blog">
-			<div class="blog_title">
-				{{ blog_title }}
-			</div>
-			<div class="blog_content">
-				{{ blog_content }}
-			</div>
+        <div class="blog-list">
+            {{range .blogs}}
+            <div class="blog">
+                <div class="blog_title">
+                    {{ .Title }}
+                </div>
+                <div class="blog_content">
+                    {{ .Content }}
+                </div>
+            </div>
+            {{end}}
 		</div>
     </div>
 	<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
