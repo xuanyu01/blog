@@ -70,15 +70,3 @@ func main() {
 		log.Fatal(err)
 	}
 }
-
-//func MiddleWare() gin.HandlerFunc {
-//	r := gin.New()
-//
-//	// 使用日志中间件
-//	logger := zap.New()
-//	r.Use(ginzap.Ginzap(logger, time.RFC3339, true))
-//
-//	// ... 其他路由和处理函数
-//
-//	r.Run(":8080")
-//}
