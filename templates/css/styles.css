@@ -88,3 +88,26 @@ body {
     line-height: 0px;
     position: relative;
 }
+
+.user-area {
+    margin-right: 30px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    left: 600px;
+}
+
+.avatar {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+}
+
+.login-btn {
+    color: white;
+    text-decoration: none;
+    padding: 6px 12px;
+    border: 1px solid white;
+    border-radius: 5px;
+}

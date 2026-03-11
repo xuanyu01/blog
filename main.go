@@ -1,6 +1,8 @@
 package main
 
 import (
+	"blog/mysqlDB"
+	"blog/redisDB"
 	_ "database/sql"
 	"log"
 
@@ -17,15 +19,29 @@ func main() {
 	r.Static("/js", "./templates/js")
 	r.Static("/img", "./templates/img")
 
-	db, err := InitDB()
+	//连接mysql
+	db, err := mysqlDB.InitDB()
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer db.Close()
 
-	r.SetHTMLTemplate(LoadTemplates())
+	//连接Redis
+	err = redisDB.InitRedis()
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	RegisterRouters(r, db)
+	//加载模板
+	r.SetHTMLTemplate(mysqlDB.LoadTemplates())
+
+	//公共路由
+	mysqlDB.RegisterRouters(r, db)
+
+	//登录验证
+	auth := r.Group("/")
+	auth.Use(redisDB.AuthMiddleware())
+	mysqlDB.RegisterAuthRouters(auth, db)
 
 	if err := r.Run(":5345"); err != nil {
 		log.Fatal(err)
