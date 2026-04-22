@@ -24,6 +24,14 @@ type AuthService struct {
 	sessionStore session.Store
 }
 
+// UserListResult 表示管理员用户列表的分页结果
+type UserListResult struct {
+	Items    []model.UserListItem
+	Page     int
+	PageSize int
+	Total    int
+}
+
 // NewAuthService 创建认证业务服务
 func NewAuthService(userRepo *repository.UserRepository, sessionStore session.Store) *AuthService {
 	return &AuthService{
@@ -173,6 +181,146 @@ func (s *AuthService) UpdatePassword(sessionID string, payload model.PasswordUpd
 	return s.userRepo.UpdatePassword(username, string(newHashedPassword))
 }
 
+// UpdateUserPermission 由管理员修改其他用户权限
+func (s *AuthService) UpdateUserPermission(sessionID string, payload model.UserPermissionUpdate) error {
+	if sessionID == "" {
+		return errors.New("unauthorized")
+	}
+
+	currentUsername, err := s.sessionStore.Get(sessionID)
+	if err != nil {
+		return err
+	}
+
+	currentUser, err := s.userRepo.GetByUsername(currentUsername)
+	if err != nil {
+		return err
+	}
+
+	if currentUser.Permission != model.PermissionAdmin {
+		return errors.New("only admin can update user permission")
+	}
+
+	targetUsername := strings.TrimSpace(payload.Username)
+	targetPermission := strings.TrimSpace(payload.Permission)
+	if targetUsername == "" || targetPermission == "" {
+		return errors.New("username and permission are required")
+	}
+
+	if targetUsername == currentUsername {
+		return errors.New("admin cannot update its own permission with this action")
+	}
+
+	if !model.IsAssignablePermission(targetPermission) {
+		return errors.New("permission can only be user or user_admin")
+	}
+
+	exists, err := s.userRepo.Exists(targetUsername)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return errors.New("user not found")
+	}
+
+	return s.userRepo.UpdatePermission(targetUsername, targetPermission)
+}
+
+// ListUsers 返回管理员界面的用户分页列表
+func (s *AuthService) ListUsers(sessionID string, page, pageSize int) (UserListResult, error) {
+	if sessionID == "" {
+		return UserListResult{}, errors.New("unauthorized")
+	}
+
+	currentUsername, err := s.sessionStore.Get(sessionID)
+	if err != nil {
+		return UserListResult{}, err
+	}
+
+	currentUser, err := s.userRepo.GetByUsername(currentUsername)
+	if err != nil {
+		return UserListResult{}, err
+	}
+
+	if !model.CanManageAllBlogs(currentUser.Permission) {
+		return UserListResult{}, errors.New("forbidden")
+	}
+
+	if page < 1 {
+		page = 1
+	}
+	if pageSize < 1 {
+		pageSize = 10
+	}
+	if pageSize > 50 {
+		pageSize = 50
+	}
+
+	total, err := s.userRepo.CountUsers()
+	if err != nil {
+		return UserListResult{}, err
+	}
+
+	items, err := s.userRepo.ListUsers(pageSize, (page-1)*pageSize)
+	if err != nil {
+		return UserListResult{}, err
+	}
+
+	return UserListResult{
+		Items:    items,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+	}, nil
+}
+
+// DeleteUser 由管理员或用户管理员删除用户
+func (s *AuthService) DeleteUser(sessionID, targetUsername string) error {
+	if sessionID == "" {
+		return errors.New("unauthorized")
+	}
+
+	currentUsername, err := s.sessionStore.Get(sessionID)
+	if err != nil {
+		return err
+	}
+
+	currentUser, err := s.userRepo.GetByUsername(currentUsername)
+	if err != nil {
+		return err
+	}
+
+	if !model.CanManageAllBlogs(currentUser.Permission) {
+		return errors.New("forbidden")
+	}
+
+	targetUsername = strings.TrimSpace(targetUsername)
+	if targetUsername == "" {
+		return errors.New("username is required")
+	}
+	if targetUsername == currentUsername {
+		return errors.New("cannot delete current user")
+	}
+
+	targetUser, err := s.userRepo.GetByUsername(targetUsername)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("user not found")
+		}
+		return err
+	}
+
+	if targetUser.Permission == model.PermissionAdmin {
+		return errors.New("cannot delete admin user")
+	}
+
+	if currentUser.Permission == model.PermissionUserAdmin && targetUser.Permission != model.PermissionUser {
+		return errors.New("user_admin can only delete user")
+	}
+
+	return s.userRepo.DeleteUser(targetUsername)
+}
+
 // userViewByUsername 根据用户名加载页面展示需要的用户信息
 func (s *AuthService) userViewByUsername(username string) (model.UserView, error) {
 	user, err := s.userRepo.GetByUsername(username)
@@ -184,6 +332,7 @@ func (s *AuthService) userViewByUsername(username string) (model.UserView, error
 		UserName:    user.Username,
 		DisplayName: user.DisplayName,
 		ImageRoute:  user.Image,
+		Permission:  user.Permission,
 		IsLogin:     true,
 	}, nil
 }

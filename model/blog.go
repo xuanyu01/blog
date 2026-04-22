@@ -3,8 +3,13 @@
 */
 package model
 
-// Blog 表示首页展示的一篇博客内容
+import "time"
+
+// Blog 表示一篇博客的基础数据
 type Blog struct {
-	Title   string
-	Content string
+	ID             int64
+	Title          string
+	Content        string
+	AuthorUsername string
+	CreatedAt      time.Time
 }

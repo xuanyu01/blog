@@ -19,6 +19,7 @@ export const appStore = reactive({
     userName: '',
     displayName: '',
     imageRoute: '',
+    permission: '',
     isLogin: false
   },
   loading: false
@@ -29,6 +30,7 @@ function emptyUser() {
     userName: '',
     displayName: '',
     imageRoute: '',
+    permission: '',
     isLogin: false
   }
 }
@@ -39,6 +41,7 @@ function normalizeUser(user = {}) {
     userName: user.userName || user.UserName || '',
     displayName: user.displayName || user.DisplayName || '',
     imageRoute: user.imageRoute || user.ImageRoute || '',
+    permission: user.permission || user.Permission || '',
     isLogin: Boolean(user.isLogin ?? user.IsLogin)
   }
 }

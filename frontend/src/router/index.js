@@ -6,7 +6,10 @@ import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import UserView from '../views/UserView.vue'
+import AdminView from '../views/AdminView.vue'
 import AvatarUploadView from '../views/AvatarUploadView.vue'
+import CreateBlogView from '../views/CreateBlogView.vue'
+import BlogDetailView from '../views/BlogDetailView.vue'
 
 // routes 描述路径和页面组件的映射关系
 const routes = [
@@ -14,7 +17,10 @@ const routes = [
   { path: '/login', name: 'login', component: LoginView },
   { path: '/register', name: 'register', component: RegisterView },
   { path: '/user', name: 'user', component: UserView },
-  { path: '/user/avatar', name: 'user-avatar', component: AvatarUploadView }
+  { path: '/admin', name: 'admin', component: AdminView },
+  { path: '/user/avatar', name: 'user-avatar', component: AvatarUploadView },
+  { path: '/blog/:id', name: 'blog-detail', component: BlogDetailView },
+  { path: '/blog/create', name: 'blog-create', component: CreateBlogView }
 ]
 
 // router 是前端路由实例

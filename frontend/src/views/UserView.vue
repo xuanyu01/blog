@@ -19,7 +19,20 @@
           <div class="user-meta">
             <h1>{{ displayNameForView }}</h1>
             <p>账号 {{ user.userName }}</p>
+            <p class="user-permission">权限 {{ permissionText }}</p>
           </div>
+        </div>
+
+        <div class="quick-actions">
+          <RouterLink to="/blog/create" class="action-card action-card-primary">
+            <strong>创建博客</strong>
+            <span>进入编辑页面发布新的博客内容</span>
+          </RouterLink>
+
+          <RouterLink to="/user/avatar" class="action-card">
+            <strong>修改头像</strong>
+            <span>支持上传 png jpg jpeg gif 图片</span>
+          </RouterLink>
         </div>
 
         <div class="user-grid">
@@ -39,8 +52,6 @@
                 placeholder="请输入新的显示名称"
               />
             </label>
-
-            <p class="hint">点击上方头像进入上传页面 仅允许 png jpg jpeg gif 图片</p>
 
             <button type="submit" :disabled="profileSaving">
               {{ profileSaving ? '保存中...' : '保存资料' }}
@@ -125,8 +136,21 @@ const passwordForm = reactive({
 // user 是当前用户状态的计算属性别名
 const user = computed(() => store.user)
 
-// displayNameForView 用显示名称优先展示 当前没有时回退到账号
+// displayNameForView 优先显示显示名称
 const displayNameForView = computed(() => user.value.displayName || user.value.userName || '用户')
+
+// permissionText 把权限值转换为中文展示
+const permissionText = computed(() => {
+  switch (user.value.permission) {
+    case 'admin':
+      return '系统管理员'
+    case 'user_admin':
+      return '用户管理员'
+    case 'user':
+    default:
+      return '普通用户'
+  }
+})
 
 // initials 用于在没有头像时生成占位字母
 const initials = computed(() => displayNameForView.value.slice(0, 1).toUpperCase())
@@ -232,6 +256,39 @@ async function handlePasswordSubmit() {
   white-space: nowrap;
 }
 
+.quick-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+}
+
+.action-card {
+  display: grid;
+  gap: 8px;
+  padding: 20px;
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 18px 40px rgba(40, 58, 80, 0.08);
+  color: #203040;
+}
+
+.action-card strong {
+  font-size: 18px;
+}
+
+.action-card span {
+  color: #5f6f82;
+}
+
+.action-card-primary {
+  background: linear-gradient(135deg, #203040, #35506a);
+  color: #fff;
+}
+
+.action-card-primary span {
+  color: rgba(255, 255, 255, 0.8);
+}
+
 .user-meta h1 {
   margin: 0 0 8px;
 }
@@ -239,6 +296,11 @@ async function handlePasswordSubmit() {
 .user-meta p {
   margin: 0;
   color: #5f6f82;
+}
+
+.user-permission {
+  font-size: 13px;
+  color: #8a5b36;
 }
 
 .user-grid {
@@ -296,11 +358,5 @@ async function handlePasswordSubmit() {
 .panel button:disabled {
   cursor: wait;
   opacity: 0.72;
-}
-
-.hint {
-  margin: -4px 0 0;
-  color: #6a7c8f;
-  font-size: 13px;
 }
 </style>

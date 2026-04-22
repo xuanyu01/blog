@@ -29,6 +29,29 @@ export function getAppState() {
   return request('/api/state')
 }
 
+// createBlog 发送创建博客请求
+export function createBlog(payload) {
+  const body = new URLSearchParams(payload)
+  return request('/api/blogs', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body
+  })
+}
+
+// deleteBlog 删除指定博客
+export function deleteBlog(blogID) {
+  return request(`/api/blogs/${blogID}`, {
+    method: 'DELETE'
+  })
+}
+
+/*
+  以下是用户相关的 API
+*/
+
 // login 发送登录请求
 export function login(payload) {
   const body = new URLSearchParams(payload)
@@ -95,5 +118,28 @@ export function updateUserPassword(payload) {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify(payload)
+  })
+}
+
+// updateUserPermission 管理员修改其他用户权限
+export function updateUserPermission(payload) {
+  return request('/api/user/permission', {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+}
+
+// getAdminUsers 获取管理员界面的分页用户列表
+export function getAdminUsers(page = 1, pageSize = 10) {
+  return request(`/api/admin/users?page=${page}&pageSize=${pageSize}`)
+}
+
+// deleteManagedUser 删除指定用户
+export function deleteManagedUser(username) {
+  return request(`/api/admin/users/${encodeURIComponent(username)}`, {
+    method: 'DELETE'
   })
 }

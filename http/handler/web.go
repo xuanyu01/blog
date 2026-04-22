@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
@@ -40,6 +41,13 @@ type WebHandler struct {
 type appStateResponse struct {
 	Blogs []model.Blog   `json:"blogs"`
 	User  model.UserView `json:"user"`
+}
+
+type userListResponse struct {
+	Items    []model.UserListItem `json:"items"`
+	Page     int                  `json:"page"`
+	PageSize int                  `json:"pageSize"`
+	Total    int                  `json:"total"`
 }
 
 // NewWebHandler 创建 WebHandler 实例
@@ -247,6 +255,121 @@ func (h *WebHandler) UpdatePassword(c *gin.Context) {
 	})
 }
 
+// UpdateUserPermission 处理管理员修改用户权限请求
+func (h *WebHandler) UpdateUserPermission(c *gin.Context) {
+	sessionID, err := c.Cookie(session.CookieName)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	var payload model.UserPermissionUpdate
+	if err := c.ShouldBindJSON(&payload); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid request body",
+		})
+		return
+	}
+
+	if err := h.authService.UpdateUserPermission(sessionID, payload); err != nil {
+		status := http.StatusBadRequest
+		switch err.Error() {
+		case "unauthorized":
+			status = http.StatusUnauthorized
+		case "only admin can update user permission":
+			status = http.StatusForbidden
+		case "user not found":
+			status = http.StatusNotFound
+		}
+
+		c.JSON(status, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Permission updated",
+	})
+}
+
+// ListUsers 处理管理员用户列表请求
+func (h *WebHandler) ListUsers(c *gin.Context) {
+	sessionID, err := c.Cookie(session.CookieName)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+
+	result, err := h.authService.ListUsers(sessionID, page, pageSize)
+	if err != nil {
+		status := http.StatusBadRequest
+		switch err.Error() {
+		case "unauthorized":
+			status = http.StatusUnauthorized
+		case "forbidden":
+			status = http.StatusForbidden
+		}
+
+		c.JSON(status, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, userListResponse{
+		Items:    result.Items,
+		Page:     result.Page,
+		PageSize: result.PageSize,
+		Total:    result.Total,
+	})
+}
+
+// DeleteUser 处理管理员删除用户请求
+func (h *WebHandler) DeleteUser(c *gin.Context) {
+	sessionID, err := c.Cookie(session.CookieName)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	if err := h.authService.DeleteUser(sessionID, c.Param("username")); err != nil {
+		status := http.StatusBadRequest
+		switch err.Error() {
+		case "unauthorized":
+			status = http.StatusUnauthorized
+		case "forbidden":
+			status = http.StatusForbidden
+		case "user not found":
+			status = http.StatusNotFound
+		case "cannot delete admin user":
+			status = http.StatusForbidden
+		case "user_admin can only delete user":
+			status = http.StatusForbidden
+		case "cannot delete current user":
+			status = http.StatusBadRequest
+		}
+
+		c.JSON(status, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "User deleted",
+	})
+}
+
 // SubmitGet 处理 submit 的 GET 请求
 func (h *WebHandler) SubmitGet(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{
@@ -338,4 +461,74 @@ func generateAvatarFileName(ext string) (string, error) {
 
 	hash := sha256.Sum256(randomBytes)
 	return hex.EncodeToString(hash[:]) + ext, nil
+}
+
+// CreateBlog 处理创建博客请求
+func (h *WebHandler) CreateBlog(c *gin.Context) {
+	user := h.getCurrentUser(c)
+	if !user.IsLogin {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	title := c.PostForm("title")
+	content := c.PostForm("content")
+
+	if err := h.blogService.CreateBlog(title, content, user.UserName); err != nil {
+		status := http.StatusBadRequest
+		if err.Error() == "unauthorized" {
+			status = http.StatusUnauthorized
+		}
+
+		c.JSON(status, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Blog created",
+	})
+}
+
+// DeleteBlog 处理删除博客请求
+func (h *WebHandler) DeleteBlog(c *gin.Context) {
+	user := h.getCurrentUser(c)
+	if !user.IsLogin {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || blogID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid blog id",
+		})
+		return
+	}
+
+	if err := h.blogService.DeleteBlog(blogID, user.UserName, user.Permission); err != nil {
+		status := http.StatusBadRequest
+		switch err.Error() {
+		case "unauthorized":
+			status = http.StatusUnauthorized
+		case "only the author can delete this blog":
+			status = http.StatusForbidden
+		case "blog not found":
+			status = http.StatusNotFound
+		}
+
+		c.JSON(status, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Blog deleted",
+	})
 }

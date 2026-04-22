@@ -36,7 +36,7 @@ func New() Config {
 			Address: ":5345",
 		},
 		MySQL: MySQLConfig{
-			DSN: "blog:123456@tcp(127.0.0.1:3306)/blog?charset=utf8",
+			DSN: "blog:123456@tcp(127.0.0.1:3306)/blog?charset=utf8mb4&parseTime=true&loc=Local",
 		},
 		Redis: RedisConfig{
 			Addr:     "localhost:6379",

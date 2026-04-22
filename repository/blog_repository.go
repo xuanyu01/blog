@@ -1,5 +1,5 @@
 /*
-该文件实现博客数据的数据库访问逻辑
+这个文件实现博客数据的数据访问逻辑
 */
 package repository
 
@@ -8,8 +8,7 @@ import (
 	"database/sql"
 )
 
-// BlogRepository 负责读取博客数据
-// 它封装与博客列表查询相关的 SQL 访问细节
+// BlogRepository 负责读取和写入博客数据
 type BlogRepository struct {
 	db *sql.DB
 }
@@ -21,7 +20,11 @@ func NewBlogRepository(db *sql.DB) *BlogRepository {
 
 // List 查询博客列表
 func (r *BlogRepository) List() ([]model.Blog, error) {
-	rows, err := r.db.Query("SELECT blog_title, blog_content FROM blog")
+	rows, err := r.db.Query(`
+		SELECT blog_id, blog_title, blog_content, COALESCE(author_username, ''), created_at
+		FROM blog
+		ORDER BY created_at DESC, blog_id DESC
+	`)
 	if err != nil {
 		return nil, err
 	}
@@ -31,8 +34,9 @@ func (r *BlogRepository) List() ([]model.Blog, error) {
 	for rows.Next() {
 		var blog model.Blog
 
-		// 逐行扫描结果，保持数据库字段到领域模型的映射集中在仓储层
-		if err := rows.Scan(&blog.Title, &blog.Content); err != nil {
+		// 列表接口把博客标识 作者和创建时间一起带给前端
+		// 这样详情跳转 权限判断和展示都不需要再猜测来源
+		if err := rows.Scan(&blog.ID, &blog.Title, &blog.Content, &blog.AuthorUsername, &blog.CreatedAt); err != nil {
 			return nil, err
 		}
 		blogs = append(blogs, blog)
@@ -43,4 +47,31 @@ func (r *BlogRepository) List() ([]model.Blog, error) {
 	}
 
 	return blogs, nil
+}
+
+// Create 创建新博客
+func (r *BlogRepository) Create(blog *model.Blog) error {
+	_, err := r.db.Exec(
+		"INSERT INTO blog (blog_title, blog_content, author_username) VALUES (?, ?, ?)",
+		blog.Title,
+		blog.Content,
+		blog.AuthorUsername,
+	)
+	return err
+}
+
+// GetAuthorByID 查询指定博客的作者用户名
+func (r *BlogRepository) GetAuthorByID(blogID int64) (string, error) {
+	var authorUsername string
+	err := r.db.QueryRow("SELECT COALESCE(author_username, '') FROM blog WHERE blog_id=?", blogID).Scan(&authorUsername)
+	if err != nil {
+		return "", err
+	}
+	return authorUsername, nil
+}
+
+// Delete 删除指定博客
+func (r *BlogRepository) Delete(blogID int64) error {
+	_, err := r.db.Exec("DELETE FROM blog WHERE blog_id=?", blogID)
+	return err
 }
