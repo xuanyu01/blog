@@ -18,7 +18,9 @@ async function request(url, options = {}) {
   const data = contentType.includes('application/json') ? await response.json() : null
 
   if (!response.ok) {
-    throw new Error(data?.message || 'request failed')
+    const error = new Error(data?.message || 'request failed')
+    error.status = response.status
+    throw error
   }
 
   return data
@@ -29,11 +31,41 @@ export function getAppState() {
   return request('/api/state')
 }
 
+// getBlogList 获取分页博客列表
+export function getBlogList(params = {}) {
+  const searchParams = new URLSearchParams()
+  searchParams.set('page', String(params.page || 1))
+  searchParams.set('pageSize', String(params.pageSize || 10))
+
+  if (params.keyword) {
+    searchParams.set('keyword', params.keyword)
+  }
+
+  return request(`/api/blogs?${searchParams.toString()}`)
+}
+
 // createBlog 发送创建博客请求
 export function createBlog(payload) {
   const body = new URLSearchParams(payload)
   return request('/api/blogs', {
     method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded'
+    },
+    body
+  })
+}
+
+// getBlogById 获取单篇博客详情
+export function getBlogById(blogID) {
+  return request(`/api/blogs/${blogID}`)
+}
+
+// updateBlog 更新指定博客
+export function updateBlog(blogID, payload) {
+  const body = new URLSearchParams(payload)
+  return request(`/api/blogs/${blogID}`, {
+    method: 'PUT',
     headers: {
       'Content-Type': 'application/x-www-form-urlencoded'
     },

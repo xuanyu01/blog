@@ -34,7 +34,10 @@ func New(webHandler *handler.WebHandler) *gin.Engine {
 	api.POST("/user/avatar", webHandler.UploadAvatar)
 	api.GET("/submit", webHandler.SubmitGet)
 	api.POST("/submit", webHandler.SubmitPost)
+	api.GET("/blogs", webHandler.ListBlogs)
 	api.POST("/blogs", webHandler.CreateBlog)
+	api.GET("/blogs/:id", webHandler.GetBlogByID)
+	api.PUT("/blogs/:id", webHandler.UpdateBlog)
 	api.DELETE("/blogs/:id", webHandler.DeleteBlog)
 
 	distDir := filepath.Join("frontend", "dist")

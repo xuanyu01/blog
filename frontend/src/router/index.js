@@ -20,7 +20,8 @@ const routes = [
   { path: '/admin', name: 'admin', component: AdminView },
   { path: '/user/avatar', name: 'user-avatar', component: AvatarUploadView },
   { path: '/blog/:id', name: 'blog-detail', component: BlogDetailView },
-  { path: '/blog/create', name: 'blog-create', component: CreateBlogView }
+  { path: '/blog/create', name: 'blog-create', component: CreateBlogView },
+  { path: '/blog/:id/edit', name: 'blog-edit', component: CreateBlogView }
 ]
 
 // router 是前端路由实例

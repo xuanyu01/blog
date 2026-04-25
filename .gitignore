@@ -1,2 +1,11 @@
 node_modules/
 *.exe
+.idea/
+*.log
+dist/
+build/
+.env
+.DS_Store
+short.md
+develop.md
+*.sql

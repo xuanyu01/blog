@@ -10,6 +10,7 @@ type User struct {
 	DisplayName string
 	Image       string
 	Permission  string
+	Status      string
 }
 
 // UserView 表示前端页面使用的用户展示数据

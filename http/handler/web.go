@@ -39,8 +39,15 @@ type WebHandler struct {
 
 // appStateResponse 表示首页状态接口的返回结构
 type appStateResponse struct {
-	Blogs []model.Blog   `json:"blogs"`
-	User  model.UserView `json:"user"`
+	User model.UserView `json:"user"`
+}
+
+type blogListResponse struct {
+	Items    []model.Blog `json:"items"`
+	Page     int          `json:"page"`
+	PageSize int          `json:"pageSize"`
+	Total    int          `json:"total"`
+	Keyword  string       `json:"keyword"`
 }
 
 type userListResponse struct {
@@ -61,7 +68,18 @@ func NewWebHandler(blogService *service.BlogService, authService *service.AuthSe
 // GetAppState 返回首页所需的聚合数据
 func (h *WebHandler) GetAppState(c *gin.Context) {
 	user := h.getCurrentUser(c)
-	blogs, err := h.blogService.ListBlogs()
+	c.JSON(http.StatusOK, appStateResponse{
+		User: user,
+	})
+}
+
+// ListBlogs 处理分页博客列表请求
+func (h *WebHandler) ListBlogs(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
+	keyword := strings.TrimSpace(c.Query("keyword"))
+
+	result, err := h.blogService.ListBlogs(page, pageSize, keyword)
 	if err != nil {
 		log.Println("list blogs failed:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -70,9 +88,12 @@ func (h *WebHandler) GetAppState(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, appStateResponse{
-		Blogs: blogs,
-		User:  user,
+	c.JSON(http.StatusOK, blogListResponse{
+		Items:    result.Items,
+		Page:     result.Page,
+		PageSize: result.PageSize,
+		Total:    result.Total,
+		Keyword:  result.Keyword,
 	})
 }
 
@@ -463,6 +484,33 @@ func generateAvatarFileName(ext string) (string, error) {
 	return hex.EncodeToString(hash[:]) + ext, nil
 }
 
+// GetBlogByID 处理单篇博客详情请求
+func (h *WebHandler) GetBlogByID(c *gin.Context) {
+	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || blogID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid blog id",
+		})
+		return
+	}
+
+	blog, err := h.blogService.GetBlogByID(blogID)
+	if err != nil {
+		status := http.StatusInternalServerError
+		switch err.Error() {
+		case "blog not found":
+			status = http.StatusNotFound
+		}
+
+		c.JSON(status, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, blog)
+}
+
 // CreateBlog 处理创建博客请求
 func (h *WebHandler) CreateBlog(c *gin.Context) {
 	user := h.getCurrentUser(c)
@@ -490,6 +538,49 @@ func (h *WebHandler) CreateBlog(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Blog created",
+	})
+}
+
+// UpdateBlog 处理博客编辑请求
+func (h *WebHandler) UpdateBlog(c *gin.Context) {
+	user := h.getCurrentUser(c)
+	if !user.IsLogin {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || blogID <= 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"message": "invalid blog id",
+		})
+		return
+	}
+
+	title := c.PostForm("title")
+	content := c.PostForm("content")
+
+	if err := h.blogService.UpdateBlog(blogID, title, content, user.UserName, user.Permission); err != nil {
+		status := http.StatusBadRequest
+		switch err.Error() {
+		case "unauthorized":
+			status = http.StatusUnauthorized
+		case "only the author can edit this blog":
+			status = http.StatusForbidden
+		case "blog not found":
+			status = http.StatusNotFound
+		}
+
+		c.JSON(status, gin.H{
+			"message": err.Error(),
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Blog updated",
 	})
 }
 

@@ -3,6 +3,7 @@
 */
 import { reactive } from 'vue'
 import {
+  getBlogList,
   getAppState,
   getCurrentUser,
   logout as logoutRequest,
@@ -15,6 +16,12 @@ import {
 // 页面组件通过它共享基础数据 而不必各自重复请求
 export const appStore = reactive({
   blogs: [],
+  blogList: {
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    keyword: ''
+  },
   user: {
     userName: '',
     displayName: '',
@@ -47,15 +54,38 @@ function normalizeUser(user = {}) {
 }
 
 // refreshAppState 刷新首页所需的聚合状态
-export async function refreshAppState() {
+export async function refreshAppState(params = {}) {
   appStore.loading = true
   try {
     const data = await getAppState()
-    appStore.blogs = data.blogs || []
     appStore.user = normalizeUser(data.user)
+    await refreshBlogList(params)
   } finally {
     appStore.loading = false
   }
+}
+
+// refreshBlogList 刷新博客分页列表
+export async function refreshBlogList(params = {}) {
+  const nextPage = params.page ?? appStore.blogList.page
+  const nextPageSize = params.pageSize ?? appStore.blogList.pageSize
+  const nextKeyword = params.keyword ?? appStore.blogList.keyword
+
+  const data = await getBlogList({
+    page: nextPage,
+    pageSize: nextPageSize,
+    keyword: nextKeyword
+  })
+
+  appStore.blogs = data.items || []
+  appStore.blogList = {
+    page: data.page || nextPage,
+    pageSize: data.pageSize || nextPageSize,
+    total: data.total || 0,
+    keyword: data.keyword || ''
+  }
+
+  return appStore.blogList
 }
 
 // refreshCurrentUser 刷新当前用户状态

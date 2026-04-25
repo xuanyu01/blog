@@ -1,6 +1,6 @@
 <!--
 /*
-	这个文件定义博客发布页面组件
+  这个文件定义博客发布和编辑页面组件
 */
 -->
 <template>
@@ -9,13 +9,19 @@
       <div class="editor-card">
         <div class="editor-head">
           <div>
-            <h2>发布博客</h2>
-            <p>填写标题和内容后即可创建新的博客</p>
+            <h2>{{ pageTitle }}</h2>
+            <p>{{ pageDescription }}</p>
           </div>
           <button type="button" class="secondary-btn" @click="router.push('/user')">返回用户中心</button>
         </div>
 
-        <form class="editor-form" @submit.prevent="handleSubmit">
+        <div v-if="isEditMode && loadingBlog" class="feedback">正在加载要编辑的博客内容...</div>
+
+        <div v-else-if="isEditMode && !canEdit" class="feedback error">
+          {{ message || '你没有权限编辑这篇博客' }}
+        </div>
+
+        <form v-else class="editor-form" @submit.prevent="handleSubmit">
           <label class="field">
             <span>标题</span>
             <input
@@ -36,8 +42,8 @@
           </label>
 
           <div class="editor-actions">
-            <button type="submit" class="primary-btn" :disabled="submitting">
-              {{ submitting ? '发布中...' : '发布博客' }}
+            <button type="submit" class="primary-btn" :disabled="submitting || loadingBlog">
+              {{ submitText }}
             </button>
           </div>
 
@@ -50,62 +56,163 @@
 
     <div class="empty-card" v-else>
       <h3>你还没有登录</h3>
-      <p>请先登录后再发布博客</p>
+      <p>请先登录后再发布或编辑博客</p>
     </div>
   </section>
 </template>
 
 <script setup>
 /*
-	这个页面负责创建新的博客内容
+  这个页面负责创建新博客，也复用为博客编辑页
 */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
-import { createBlog } from '../api/client'
+import { useRoute, useRouter } from 'vue-router'
+import { createBlog, getBlogById, updateBlog } from '../api/client'
 import { appStore as store, refreshAppState, refreshCurrentUser } from '../store/appStore'
 
+const route = useRoute()
 const router = useRouter()
 const ready = ref(false)
+const loadingBlog = ref(false)
 const submitting = ref(false)
 const message = ref('')
 const success = ref(false)
+const currentBlog = ref(null)
 
 const form = reactive({
   title: '',
   content: ''
 })
 
-// user 是当前用户状态的计算属性别名
+const editingBlogID = computed(() => Number.parseInt(route.params.id, 10))
+const isEditMode = computed(() => route.name === 'blog-edit')
 const user = computed(() => store.user)
 
-// 页面挂载后同步当前用户状态
-onMounted(async () => {
-  const currentUser = await refreshCurrentUser()
-  ready.value = true
-
-  if (!currentUser.isLogin) {
-    setTimeout(() => router.push('/login'), 1200)
+const canEdit = computed(() => {
+  if (!isEditMode.value) {
+    return true
   }
+
+  if (!currentBlog.value || !store.user.isLogin) {
+    return false
+  }
+
+  if (store.user.permission === 'admin' || store.user.permission === 'user_admin') {
+    return true
+  }
+
+  return store.user.userName === currentBlog.value.AuthorUsername
 })
 
-// handleSubmit 提交博客创建请求
+const pageTitle = computed(() => (isEditMode.value ? '编辑博客' : '发布博客'))
+const pageDescription = computed(() => (
+  isEditMode.value
+    ? '系统会先带出原有内容，修改后需要再次确认发布'
+    : '填写标题和内容后即可创建新的博客'
+))
+
+const submitText = computed(() => {
+  if (submitting.value) {
+    return isEditMode.value ? '更新中...' : '发布中...'
+  }
+
+  return isEditMode.value ? '确认并重新发布' : '发布博客'
+})
+
+onMounted(async () => {
+  const currentUser = await refreshCurrentUser()
+  if (!currentUser.isLogin) {
+    ready.value = true
+    setTimeout(() => router.push('/login'), 1200)
+    return
+  }
+
+  if (isEditMode.value) {
+    await loadEditableBlog()
+  }
+
+  ready.value = true
+})
+
+async function loadEditableBlog() {
+  if (!Number.isInteger(editingBlogID.value) || editingBlogID.value <= 0) {
+    success.value = false
+    message.value = '无效的博客编号'
+    return
+  }
+
+  loadingBlog.value = true
+  try {
+    currentBlog.value = await getBlogById(editingBlogID.value)
+
+    if (!canEdit.value) {
+      success.value = false
+      message.value = '你没有权限编辑这篇博客'
+      return
+    }
+
+    form.title = currentBlog.value.Title || ''
+    form.content = currentBlog.value.Content || ''
+  } catch (error) {
+    success.value = false
+    if (error.status === 404) {
+      message.value = '未找到要编辑的博客'
+    } else if (error.status === 403) {
+      message.value = '你没有权限编辑这篇博客'
+    } else {
+      message.value = error.message
+    }
+  } finally {
+    loadingBlog.value = false
+  }
+}
+
 async function handleSubmit() {
+  if (isEditMode.value && (!currentBlog.value || !canEdit.value)) {
+    success.value = false
+    message.value = '你没有权限编辑这篇博客'
+    return
+  }
+
+  if (isEditMode.value) {
+    const targetTitle = form.title || currentBlog.value?.Title || '未命名博客'
+    const confirmed = window.confirm(`确认重新发布《${targetTitle}》吗？`)
+    if (!confirmed) {
+      return
+    }
+  }
+
   submitting.value = true
   message.value = ''
 
   try {
-    await createBlog({
-      title: form.title,
-      content: form.content
-    })
+    if (isEditMode.value) {
+      await updateBlog(editingBlogID.value, {
+        title: form.title,
+        content: form.content
+      })
+    } else {
+      await createBlog({
+        title: form.title,
+        content: form.content
+      })
+    }
 
-    await refreshAppState()
+    await refreshAppState({ page: 1 })
     success.value = true
-    message.value = '博客创建成功 1 秒后返回首页'
-    form.title = ''
-    form.content = ''
+    message.value = isEditMode.value ? '博客更新成功，1 秒后跳转到详情页' : '博客创建成功，1 秒后返回首页'
+
+    if (!isEditMode.value) {
+      form.title = ''
+      form.content = ''
+    }
 
     setTimeout(() => {
+      if (isEditMode.value) {
+        router.push(`/blog/${editingBlogID.value}`)
+        return
+      }
+
       router.push('/')
     }, 1000)
   } catch (error) {
