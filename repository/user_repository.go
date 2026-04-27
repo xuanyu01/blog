@@ -1,5 +1,5 @@
 /*
-这个文件实现用户数据的数据访问逻辑
+实现用户数据访问逻辑。
 */
 package repository
 
@@ -11,17 +11,17 @@ import (
 
 const defaultUserPermission = model.PermissionUser
 
-// UserRepository 负责读取和写入用户数据
+// UserRepository 负责用户数据读写。
 type UserRepository struct {
 	db *sql.DB
 }
 
-// NewUserRepository 创建用户仓储实例
+// NewUserRepository 创建用户仓储。
 func NewUserRepository(db *sql.DB) *UserRepository {
 	return &UserRepository{db: db}
 }
 
-// Exists 判断用户名是否已经存在
+// Exists 判断用户名是否已存在。
 func (r *UserRepository) Exists(username string) (bool, error) {
 	var storedUsername string
 	err := r.db.QueryRow("SELECT username FROM users WHERE username=? AND deleted_at IS NULL", username).Scan(&storedUsername)
@@ -35,10 +35,10 @@ func (r *UserRepository) Exists(username string) (bool, error) {
 	return false, err
 }
 
-// Create 创建新用户
+// Create 创建新用户。
 func (r *UserRepository) Create(username, hashedPassword string) error {
 	_, err := r.db.Exec(
-		"INSERT INTO users (username, display_name, password_hash, permission) VALUES (?, ?, ?, ?)",
+		"INSERT INTO users (username, display_name, email, password_hash, permission) VALUES (?, ?, NULL, ?, ?)",
 		username,
 		username,
 		hashedPassword,
@@ -47,7 +47,7 @@ func (r *UserRepository) Create(username, hashedPassword string) error {
 	return err
 }
 
-// GetPasswordByUsername 根据用户名查询密码哈希
+// GetPasswordByUsername 按用户名读取密码哈希。
 func (r *UserRepository) GetPasswordByUsername(username string) (string, error) {
 	var hashedPassword string
 	err := r.db.QueryRow("SELECT password_hash FROM users WHERE username=? AND deleted_at IS NULL", username).Scan(&hashedPassword)
@@ -57,7 +57,7 @@ func (r *UserRepository) GetPasswordByUsername(username string) (string, error) 
 	return hashedPassword, nil
 }
 
-// GetByUsername 根据用户名查询基础用户信息
+// GetByUsername 按用户名读取用户信息。
 func (r *UserRepository) GetByUsername(username string) (model.User, error) {
 	var user model.User
 	err := r.db.QueryRow(
@@ -71,7 +71,7 @@ func (r *UserRepository) GetByUsername(username string) (model.User, error) {
 	return user, nil
 }
 
-// UpdateProfile 更新用户显示名和头像路径
+// UpdateProfile 更新显示名和头像。
 func (r *UserRepository) UpdateProfile(username, displayName, image string) error {
 	_, err := r.db.Exec(
 		"UPDATE users SET display_name=?, avatar_url=? WHERE username=? AND deleted_at IS NULL",
@@ -82,7 +82,7 @@ func (r *UserRepository) UpdateProfile(username, displayName, image string) erro
 	return err
 }
 
-// UpdateImage 只更新用户头像路径
+// UpdateImage 更新头像路径。
 func (r *UserRepository) UpdateImage(username, image string) error {
 	_, err := r.db.Exec(
 		"UPDATE users SET avatar_url=? WHERE username=? AND deleted_at IS NULL",
@@ -92,7 +92,7 @@ func (r *UserRepository) UpdateImage(username, image string) error {
 	return err
 }
 
-// UpdatePassword 更新用户密码哈希
+// UpdatePassword 更新密码哈希。
 func (r *UserRepository) UpdatePassword(username, hashedPassword string) error {
 	_, err := r.db.Exec(
 		"UPDATE users SET password_hash=? WHERE username=? AND deleted_at IS NULL",
@@ -102,7 +102,7 @@ func (r *UserRepository) UpdatePassword(username, hashedPassword string) error {
 	return err
 }
 
-// UpdatePermission 更新指定用户权限
+// UpdatePermission 更新用户权限。
 func (r *UserRepository) UpdatePermission(username, permission string) error {
 	_, err := r.db.Exec(
 		"UPDATE users SET permission=? WHERE username=? AND deleted_at IS NULL",
@@ -112,7 +112,7 @@ func (r *UserRepository) UpdatePermission(username, permission string) error {
 	return err
 }
 
-// CountByPermission 统计指定权限的用户数量
+// CountByPermission 统计指定权限的用户数量。
 func (r *UserRepository) CountByPermission(permission string) (int, error) {
 	var count int
 	err := r.db.QueryRow("SELECT COUNT(*) FROM users WHERE permission=? AND deleted_at IS NULL", permission).Scan(&count)
@@ -122,7 +122,7 @@ func (r *UserRepository) CountByPermission(permission string) (int, error) {
 	return count, nil
 }
 
-// ListUsers 分页查询用户列表
+// ListUsers 分页查询用户列表。
 func (r *UserRepository) ListUsers(limit, offset int) ([]model.UserListItem, error) {
 	rows, err := r.db.Query(`
 		SELECT username, COALESCE(display_name, ''), COALESCE(permission, '')
@@ -152,7 +152,7 @@ func (r *UserRepository) ListUsers(limit, offset int) ([]model.UserListItem, err
 	return users, nil
 }
 
-// CountUsers 统计用户总数
+// CountUsers 统计用户总数。
 func (r *UserRepository) CountUsers() (int, error) {
 	var count int
 	err := r.db.QueryRow("SELECT COUNT(*) FROM users WHERE deleted_at IS NULL").Scan(&count)
@@ -162,7 +162,7 @@ func (r *UserRepository) CountUsers() (int, error) {
 	return count, nil
 }
 
-// DeleteUser 删除指定用户
+// DeleteUser 软删除用户。
 func (r *UserRepository) DeleteUser(username string) error {
 	_, err := r.db.Exec("UPDATE users SET deleted_at=NOW(), status='deleted' WHERE username=? AND deleted_at IS NULL", username)
 	return err

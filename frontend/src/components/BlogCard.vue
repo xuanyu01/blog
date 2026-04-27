@@ -1,25 +1,30 @@
-<!--
-/*
-	这个文件定义博客列表中的单条博客组件
-*/
--->
 <template>
   <RouterLink :to="detailLink" class="blog-link">
     <article class="blog">
-      <div class="blog_meta">
+      <div class="blog-meta">
         <span v-if="createdAtText">{{ createdAtText }}</span>
-        <span class="blog_author">作者 {{ blog.AuthorUsername || 'unknown' }}</span>
+        <span class="blog-author">作者：{{ authorName }}</span>
+        <span v-if="categoryName" class="blog-category">{{ categoryName }}</span>
       </div>
-      <div class="blog_title">{{ blog.Title }}</div>
-      <div class="blog_content">{{ blog.Content }}</div>
+
+      <div class="blog-title">{{ title }}</div>
+      <div class="blog-content">{{ summary }}</div>
+
+      <div v-if="tags.length" class="tag-row">
+        <span v-for="item in tags" :key="item.slug || item.name" class="tag-chip"># {{ item.name }}</span>
+      </div>
+
+      <div class="stats-row">
+        <span>阅读 {{ stats.viewCount }}</span>
+        <span>点赞 {{ stats.likeCount }}</span>
+        <span>收藏 {{ stats.favoriteCount }}</span>
+        <span>评论 {{ stats.commentCount }}</span>
+      </div>
     </article>
   </RouterLink>
 </template>
 
 <script setup>
-/*
-	这个组件负责展示单篇博客的标题和摘要
-*/
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -30,16 +35,26 @@ const props = defineProps({
   }
 })
 
-// 列表和详情都改用真实博客 id
-// 这样删除和权限判断不会受到列表顺序变化影响
-const detailLink = computed(() => `/blog/${props.blog.ID}`)
+const detailLink = computed(() => `/blog/${props.blog.ID ?? props.blog.id}`)
+const title = computed(() => props.blog.Title ?? props.blog.title ?? '')
+const summary = computed(() => props.blog.Summary ?? props.blog.summary ?? props.blog.Content ?? props.blog.content ?? '')
+const authorName = computed(() => props.blog.AuthorUsername ?? props.blog.authorUsername ?? 'unknown')
+const categoryName = computed(() => props.blog.CategoryName ?? props.blog.categoryName ?? '')
+const tags = computed(() => props.blog.Tags ?? props.blog.tags ?? [])
+const stats = computed(() => props.blog.Stats ?? props.blog.stats ?? {
+  viewCount: 0,
+  likeCount: 0,
+  favoriteCount: 0,
+  commentCount: 0
+})
 
 const createdAtText = computed(() => {
-  if (!props.blog.CreatedAt) {
+  const rawDate = props.blog.CreatedAt ?? props.blog.createdAt
+  if (!rawDate) {
     return ''
   }
 
-  const date = new Date(props.blog.CreatedAt)
+  const date = new Date(rawDate)
   if (Number.isNaN(date.getTime())) {
     return ''
   }
@@ -77,7 +92,8 @@ const createdAtText = computed(() => {
   box-shadow: 0 22px 46px rgba(40, 58, 80, 0.14);
 }
 
-.blog_meta {
+.blog-meta,
+.stats-row {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -87,11 +103,15 @@ const createdAtText = computed(() => {
   letter-spacing: 0.04em;
 }
 
-.blog_author {
+.blog-author {
   color: #6d4d33;
 }
 
-.blog_title {
+.blog-category {
+  color: #1f5a35;
+}
+
+.blog-title {
   font-size: 24px;
   font-weight: 700;
   line-height: 1.35;
@@ -104,7 +124,7 @@ const createdAtText = computed(() => {
   text-overflow: ellipsis;
 }
 
-.blog_content {
+.blog-content {
   color: #5f6f82;
   line-height: 1.75;
   word-break: break-word;
@@ -113,5 +133,25 @@ const createdAtText = computed(() => {
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.tag-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.tag-chip {
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #f3ecde;
+  color: #7b5427;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stats-row {
+  color: #5f6f82;
+  letter-spacing: 0;
 }
 </style>

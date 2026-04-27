@@ -10,6 +10,8 @@ import AdminView from '../views/AdminView.vue'
 import AvatarUploadView from '../views/AvatarUploadView.vue'
 import CreateBlogView from '../views/CreateBlogView.vue'
 import BlogDetailView from '../views/BlogDetailView.vue'
+import UserDraftsView from '../views/UserDraftsView.vue'
+import UserFavoritesView from '../views/UserFavoritesView.vue'
 
 // routes 描述路径和页面组件的映射关系
 const routes = [
@@ -17,6 +19,8 @@ const routes = [
   { path: '/login', name: 'login', component: LoginView },
   { path: '/register', name: 'register', component: RegisterView },
   { path: '/user', name: 'user', component: UserView },
+  { path: '/user/drafts', name: 'user-drafts', component: UserDraftsView },
+  { path: '/user/favorites', name: 'user-favorites', component: UserFavoritesView },
   { path: '/admin', name: 'admin', component: AdminView },
   { path: '/user/avatar', name: 'user-avatar', component: AvatarUploadView },
   { path: '/blog/:id', name: 'blog-detail', component: BlogDetailView },

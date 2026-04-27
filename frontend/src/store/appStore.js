@@ -1,10 +1,12 @@
 /*
-	该文件实现前端全局状态存储
+前端全局状态存储。
 */
 import { reactive } from 'vue'
 import {
-  getBlogList,
   getAppState,
+  getArchives,
+  getBlogList,
+  getCategories,
   getCurrentUser,
   logout as logoutRequest,
   updateUserPassword,
@@ -12,15 +14,19 @@ import {
   uploadUserAvatar
 } from '../api/client'
 
-// appStore 保存博客列表 当前用户和加载状态
-// 页面组件通过它共享基础数据 而不必各自重复请求
 export const appStore = reactive({
   blogs: [],
   blogList: {
     page: 1,
     pageSize: 10,
     total: 0,
-    keyword: ''
+    keyword: '',
+    categoryId: 0,
+    archive: ''
+  },
+  taxonomy: {
+    categories: [],
+    archives: []
   },
   user: {
     userName: '',
@@ -42,7 +48,6 @@ function emptyUser() {
   }
 }
 
-// normalizeUser 兼容后端字段名并统一成前端使用的格式
 function normalizeUser(user = {}) {
   return {
     userName: user.userName || user.UserName || '',
@@ -53,28 +58,33 @@ function normalizeUser(user = {}) {
   }
 }
 
-// refreshAppState 刷新首页所需的聚合状态
 export async function refreshAppState(params = {}) {
   appStore.loading = true
   try {
     const data = await getAppState()
     appStore.user = normalizeUser(data.user)
-    await refreshBlogList(params)
+    await Promise.all([
+      refreshBlogList(params),
+      refreshTaxonomy()
+    ])
   } finally {
     appStore.loading = false
   }
 }
 
-// refreshBlogList 刷新博客分页列表
 export async function refreshBlogList(params = {}) {
   const nextPage = params.page ?? appStore.blogList.page
   const nextPageSize = params.pageSize ?? appStore.blogList.pageSize
   const nextKeyword = params.keyword ?? appStore.blogList.keyword
+  const nextCategoryId = params.categoryId ?? appStore.blogList.categoryId
+  const nextArchive = params.archive ?? appStore.blogList.archive
 
   const data = await getBlogList({
     page: nextPage,
     pageSize: nextPageSize,
-    keyword: nextKeyword
+    keyword: nextKeyword,
+    categoryId: nextCategoryId,
+    archive: nextArchive
   })
 
   appStore.blogs = data.items || []
@@ -82,13 +92,25 @@ export async function refreshBlogList(params = {}) {
     page: data.page || nextPage,
     pageSize: data.pageSize || nextPageSize,
     total: data.total || 0,
-    keyword: data.keyword || ''
+    keyword: data.keyword || '',
+    categoryId: Number(data.categoryId || 0),
+    archive: data.archive || ''
   }
 
   return appStore.blogList
 }
 
-// refreshCurrentUser 刷新当前用户状态
+export async function refreshTaxonomy() {
+  const [categories, archives] = await Promise.all([
+    getCategories(),
+    getArchives()
+  ])
+
+  appStore.taxonomy.categories = categories.items || []
+  appStore.taxonomy.archives = archives.items || []
+  return appStore.taxonomy
+}
+
 export async function refreshCurrentUser() {
   try {
     const user = normalizeUser(await getCurrentUser())
@@ -100,26 +122,22 @@ export async function refreshCurrentUser() {
   }
 }
 
-// saveUserProfile 保存用户资料并同步全局状态
 export async function saveUserProfile(payload) {
   const user = normalizeUser(await updateUserProfile(payload))
   appStore.user = user
   return user
 }
 
-// uploadAvatarAndSync 上传头像并同步全局状态
 export async function uploadAvatarAndSync(file) {
   const user = normalizeUser(await uploadUserAvatar(file))
   appStore.user = user
   return user
 }
 
-// changeUserPassword 修改当前用户密码
 export async function changeUserPassword(payload) {
   return updateUserPassword(payload)
 }
 
-// logoutAndClear 退出登录并清理本地用户状态
 export async function logoutAndClear() {
   await logoutRequest()
   appStore.user = emptyUser()

@@ -1,11 +1,10 @@
 /*
-该文件实现注册 登录 当前用户查询和用户资料修改相关的业务逻辑
+实现认证和用户资料相关业务逻辑。
 */
 package service
 
 import (
 	"blog/model"
-	"blog/repository"
 	"blog/session"
 	"database/sql"
 	"errors"
@@ -14,17 +13,31 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
-// ErrInvalidCredentials 表示登录凭证无效
+// ErrInvalidCredentials 表示登录凭证无效。
 var ErrInvalidCredentials = errors.New("username or password is invalid")
 
-// AuthService 负责认证和用户资料相关业务
-// 它把用户仓储和会话存储组合成完整的登录流程
+// AuthService 负责认证和用户资料相关业务。
 type AuthService struct {
-	userRepo     *repository.UserRepository
+	userRepo     authUserRepository
 	sessionStore session.Store
 }
 
-// UserListResult 表示管理员用户列表的分页结果
+// authUserRepository 定义认证服务依赖的用户仓储能力。
+type authUserRepository interface {
+	Exists(username string) (bool, error)
+	Create(username, hashedPassword string) error
+	GetPasswordByUsername(username string) (string, error)
+	GetByUsername(username string) (model.User, error)
+	UpdateProfile(username, displayName, image string) error
+	UpdateImage(username, image string) error
+	UpdatePassword(username, hashedPassword string) error
+	UpdatePermission(username, permission string) error
+	CountUsers() (int, error)
+	ListUsers(limit, offset int) ([]model.UserListItem, error)
+	DeleteUser(username string) error
+}
+
+// UserListResult 表示后台用户分页结果。
 type UserListResult struct {
 	Items    []model.UserListItem
 	Page     int
@@ -32,15 +45,15 @@ type UserListResult struct {
 	Total    int
 }
 
-// NewAuthService 创建认证业务服务
-func NewAuthService(userRepo *repository.UserRepository, sessionStore session.Store) *AuthService {
+// NewAuthService 创建认证服务。
+func NewAuthService(userRepo authUserRepository, sessionStore session.Store) *AuthService {
 	return &AuthService{
 		userRepo:     userRepo,
 		sessionStore: sessionStore,
 	}
 }
 
-// Register 注册新用户
+// Register 注册新用户。
 func (s *AuthService) Register(username, password string) error {
 	username = strings.TrimSpace(username)
 	if username == "" || password == "" {
@@ -55,7 +68,6 @@ func (s *AuthService) Register(username, password string) error {
 		return errors.New("user already exists")
 	}
 
-	// 密码哈希放在服务层处理 这样安全规则不会泄漏到更底层的数据访问代码里
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	if err != nil {
 		return err
@@ -64,7 +76,7 @@ func (s *AuthService) Register(username, password string) error {
 	return s.userRepo.Create(username, string(hashedPassword))
 }
 
-// Login 校验凭证并创建会话
+// Login 校验用户名和密码并创建会话。
 func (s *AuthService) Login(username, password string) (string, error) {
 	hashedPassword, err := s.userRepo.GetPasswordByUsername(username)
 	if err != nil {
@@ -74,7 +86,6 @@ func (s *AuthService) Login(username, password string) (string, error) {
 		return "", err
 	}
 
-	// 无论是用户名不存在还是密码错误 都统一返回同一种错误 减少信息泄露
 	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)); err != nil {
 		return "", ErrInvalidCredentials
 	}
@@ -82,7 +93,7 @@ func (s *AuthService) Login(username, password string) (string, error) {
 	return s.sessionStore.Create(username)
 }
 
-// Logout 删除当前会话
+// Logout 删除当前会话。
 func (s *AuthService) Logout(sessionID string) error {
 	if sessionID == "" {
 		return nil
@@ -90,7 +101,7 @@ func (s *AuthService) Logout(sessionID string) error {
 	return s.sessionStore.Delete(sessionID)
 }
 
-// CurrentUser 根据 sessionID 解析当前用户信息
+// CurrentUser 按 sessionID 获取当前登录用户。
 func (s *AuthService) CurrentUser(sessionID string) (model.UserView, error) {
 	if sessionID == "" {
 		return model.UserView{}, nil
@@ -104,7 +115,7 @@ func (s *AuthService) CurrentUser(sessionID string) (model.UserView, error) {
 	return s.userViewByUsername(username)
 }
 
-// UpdateProfile 更新用户显示名和头像路径
+// UpdateProfile 更新当前用户资料。
 func (s *AuthService) UpdateProfile(sessionID string, payload model.UserProfileUpdate) (model.UserView, error) {
 	if sessionID == "" {
 		return model.UserView{}, errors.New("unauthorized")
@@ -127,7 +138,7 @@ func (s *AuthService) UpdateProfile(sessionID string, payload model.UserProfileU
 	return s.userViewByUsername(username)
 }
 
-// UpdateAvatar 更新当前用户头像路径
+// UpdateAvatar 更新当前用户头像。
 func (s *AuthService) UpdateAvatar(sessionID, imageRoute string) (model.UserView, error) {
 	if sessionID == "" {
 		return model.UserView{}, errors.New("unauthorized")
@@ -149,7 +160,7 @@ func (s *AuthService) UpdateAvatar(sessionID, imageRoute string) (model.UserView
 	return s.userViewByUsername(username)
 }
 
-// UpdatePassword 更新当前用户密码
+// UpdatePassword 更新当前用户密码。
 func (s *AuthService) UpdatePassword(sessionID string, payload model.PasswordUpdate) error {
 	if sessionID == "" {
 		return errors.New("unauthorized")
@@ -181,7 +192,7 @@ func (s *AuthService) UpdatePassword(sessionID string, payload model.PasswordUpd
 	return s.userRepo.UpdatePassword(username, string(newHashedPassword))
 }
 
-// UpdateUserPermission 由管理员修改其他用户权限
+// UpdateUserPermission 更新指定用户权限。
 func (s *AuthService) UpdateUserPermission(sessionID string, payload model.UserPermissionUpdate) error {
 	if sessionID == "" {
 		return errors.New("unauthorized")
@@ -226,7 +237,7 @@ func (s *AuthService) UpdateUserPermission(sessionID string, payload model.UserP
 	return s.userRepo.UpdatePermission(targetUsername, targetPermission)
 }
 
-// ListUsers 返回管理员界面的用户分页列表
+// ListUsers 返回后台用户列表。
 func (s *AuthService) ListUsers(sessionID string, page, pageSize int) (UserListResult, error) {
 	if sessionID == "" {
 		return UserListResult{}, errors.New("unauthorized")
@@ -274,7 +285,7 @@ func (s *AuthService) ListUsers(sessionID string, page, pageSize int) (UserListR
 	}, nil
 }
 
-// DeleteUser 由管理员或用户管理员删除用户
+// DeleteUser 删除指定用户。
 func (s *AuthService) DeleteUser(sessionID, targetUsername string) error {
 	if sessionID == "" {
 		return errors.New("unauthorized")
@@ -321,7 +332,7 @@ func (s *AuthService) DeleteUser(sessionID, targetUsername string) error {
 	return s.userRepo.DeleteUser(targetUsername)
 }
 
-// userViewByUsername 根据用户名加载页面展示需要的用户信息
+// userViewByUsername 组装前端使用的用户视图。
 func (s *AuthService) userViewByUsername(username string) (model.UserView, error) {
 	user, err := s.userRepo.GetByUsername(username)
 	if err != nil {

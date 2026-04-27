@@ -1,6 +1,6 @@
 <!--
 /*
-	这个文件定义顶部导航组件
+  这个文件定义顶部导航组件
 */
 -->
 <template>
@@ -8,6 +8,12 @@
     <div class="nav-main">
       <ul class="nav-list nav-list-desktop">
         <li class="link"><RouterLink to="/" class="link_href">首页</RouterLink></li>
+        <li v-if="store.user.isLogin" class="link">
+          <RouterLink to="/blog/create" class="link_href">创作</RouterLink>
+        </li>
+        <li v-if="store.user.isLogin" class="link">
+          <RouterLink to="/user/favorites" class="link_href">我的收藏</RouterLink>
+        </li>
       </ul>
     </div>
 
@@ -43,7 +49,7 @@
 
 <script setup>
 /*
-	这个组件负责展示站点导航和登录状态入口
+  这个组件负责展示站点导航和登录状态入口
 */
 import { computed, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'

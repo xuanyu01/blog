@@ -1,5 +1,5 @@
 /*
-该文件是程序的启动入口，负责创建应用并启动服务
+程序启动入口。
 */
 package main
 
@@ -8,7 +8,7 @@ import (
 	"log"
 )
 
-// main 是程序的主入口函数
+// main 创建应用并启动服务。
 func main() {
 	application, err := app.New()
 	if err != nil {

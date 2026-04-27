@@ -1,8 +1,3 @@
-/*
-	这个文件封装前端访问后端 API 的请求方法
-*/
-
-// request 统一处理请求发送 响应解析和错误抛出
 async function request(url, options = {}) {
   const headers = {
     ...(options.headers || {})
@@ -26,12 +21,10 @@ async function request(url, options = {}) {
   return data
 }
 
-// getAppState 获取首页聚合状态
 export function getAppState() {
   return request('/api/state')
 }
 
-// getBlogList 获取分页博客列表
 export function getBlogList(params = {}) {
   const searchParams = new URLSearchParams()
   searchParams.set('page', String(params.page || 1))
@@ -41,10 +34,59 @@ export function getBlogList(params = {}) {
     searchParams.set('keyword', params.keyword)
   }
 
+  if (params.categoryId) {
+    searchParams.set('categoryId', String(params.categoryId))
+  }
+
+  if (params.archive) {
+    searchParams.set('archive', params.archive)
+  }
+
   return request(`/api/blogs?${searchParams.toString()}`)
 }
 
-// createBlog 发送创建博客请求
+export function getCategories() {
+  return request('/api/categories')
+}
+
+export function getManageCategories() {
+  return request('/api/admin/categories')
+}
+
+export function createCategory(payload) {
+  return request('/api/admin/categories', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+}
+
+export function updateCategory(categoryID, payload) {
+  return request(`/api/admin/categories/${categoryID}`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+}
+
+export function deleteCategory(categoryID) {
+  return request(`/api/admin/categories/${categoryID}`, {
+    method: 'DELETE'
+  })
+}
+
+export function getTags() {
+  return request('/api/tags')
+}
+
+export function getArchives() {
+  return request('/api/archives')
+}
+
 export function createBlog(payload) {
   const body = new URLSearchParams(payload)
   return request('/api/blogs', {
@@ -56,12 +98,42 @@ export function createBlog(payload) {
   })
 }
 
-// getBlogById 获取单篇博客详情
 export function getBlogById(blogID) {
   return request(`/api/blogs/${blogID}`)
 }
 
-// updateBlog 更新指定博客
+export function toggleBlogLike(blogID) {
+  return request(`/api/blogs/${blogID}/like`, {
+    method: 'POST'
+  })
+}
+
+export function toggleBlogFavorite(blogID) {
+  return request(`/api/blogs/${blogID}/favorite`, {
+    method: 'POST'
+  })
+}
+
+export function getCommentsByBlogId(blogID) {
+  return request(`/api/blogs/${blogID}/comments`)
+}
+
+export function createComment(blogID, payload) {
+  return request(`/api/blogs/${blogID}/comments`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+}
+
+export function deleteComment(commentID) {
+  return request(`/api/comments/${commentID}`, {
+    method: 'DELETE'
+  })
+}
+
 export function updateBlog(blogID, payload) {
   const body = new URLSearchParams(payload)
   return request(`/api/blogs/${blogID}`, {
@@ -73,18 +145,12 @@ export function updateBlog(blogID, payload) {
   })
 }
 
-// deleteBlog 删除指定博客
 export function deleteBlog(blogID) {
   return request(`/api/blogs/${blogID}`, {
     method: 'DELETE'
   })
 }
 
-/*
-  以下是用户相关的 API
-*/
-
-// login 发送登录请求
 export function login(payload) {
   const body = new URLSearchParams(payload)
   return request('/api/login', {
@@ -96,7 +162,6 @@ export function login(payload) {
   })
 }
 
-// register 发送注册请求
 export function register(payload) {
   const body = new URLSearchParams(payload)
   return request('/api/register', {
@@ -108,19 +173,16 @@ export function register(payload) {
   })
 }
 
-// logout 发送退出登录请求
 export function logout() {
   return request('/api/logout', {
     method: 'POST'
   })
 }
 
-// getCurrentUser 获取当前登录用户
 export function getCurrentUser() {
   return request('/api/me')
 }
 
-// updateUserProfile 更新用户资料
 export function updateUserProfile(payload) {
   return request('/api/user/profile', {
     method: 'PUT',
@@ -131,7 +193,6 @@ export function updateUserProfile(payload) {
   })
 }
 
-// uploadUserAvatar 上传用户头像
 export function uploadUserAvatar(file) {
   const formData = new FormData()
   formData.append('avatar', file)
@@ -142,7 +203,6 @@ export function uploadUserAvatar(file) {
   })
 }
 
-// updateUserPassword 更新当前用户密码
 export function updateUserPassword(payload) {
   return request('/api/user/password', {
     method: 'PUT',
@@ -153,7 +213,6 @@ export function updateUserPassword(payload) {
   })
 }
 
-// updateUserPermission 管理员修改其他用户权限
 export function updateUserPermission(payload) {
   return request('/api/user/permission', {
     method: 'PUT',
@@ -164,12 +223,59 @@ export function updateUserPermission(payload) {
   })
 }
 
-// getAdminUsers 获取管理员界面的分页用户列表
 export function getAdminUsers(page = 1, pageSize = 10) {
   return request(`/api/admin/users?page=${page}&pageSize=${pageSize}`)
 }
 
-// deleteManagedUser 删除指定用户
+export function getCurrentUserBlogs(params = {}) {
+  const searchParams = new URLSearchParams()
+  searchParams.set('page', String(params.page || 1))
+  searchParams.set('pageSize', String(params.pageSize || 10))
+
+  if (params.status) {
+    searchParams.set('status', params.status)
+  }
+
+  return request(`/api/user/blogs?${searchParams.toString()}`)
+}
+
+export function getCurrentUserFavorites(params = {}) {
+  const searchParams = new URLSearchParams()
+  searchParams.set('page', String(params.page || 1))
+  searchParams.set('pageSize', String(params.pageSize || 10))
+  return request(`/api/user/favorites?${searchParams.toString()}`)
+}
+
+export function getAdminBlogs(params = {}) {
+  const searchParams = new URLSearchParams()
+  searchParams.set('page', String(params.page || 1))
+  searchParams.set('pageSize', String(params.pageSize || 10))
+
+  if (params.keyword) {
+    searchParams.set('keyword', params.keyword)
+  }
+
+  if (params.author) {
+    searchParams.set('author', params.author)
+  }
+
+  if (params.status) {
+    searchParams.set('status', params.status)
+  }
+
+  return request(`/api/admin/blogs?${searchParams.toString()}`)
+}
+
+export function reviewAdminBlog(blogID, payload) {
+  return request(`/api/admin/blogs/${blogID}/review`, {
+    method: 'PUT',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  })
+}
+
 export function deleteManagedUser(username) {
   return request(`/api/admin/users/${encodeURIComponent(username)}`, {
     method: 'DELETE'

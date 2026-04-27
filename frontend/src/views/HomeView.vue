@@ -1,8 +1,3 @@
-<!--
-/*
-  这个文件定义首页页面组件
-*/
--->
 <template>
   <section class="page-block home-page">
     <div class="home-layout">
@@ -13,35 +8,69 @@
               v-model.trim="keywordInput"
               type="search"
               class="search-input"
-              placeholder="搜索标题、内容或作者"
+              placeholder="搜索标题、标签、内容或作者"
             />
+            <button type="button" class="filter-toggle-btn" @click="showFilters = !showFilters">
+              筛选
+            </button>
             <button type="submit" class="search-btn">搜索</button>
             <button
-              v-if="store.blogList.keyword"
+              v-if="hasActiveFilters"
               type="button"
               class="clear-btn"
-              @click="handleClearSearch"
+              @click="handleClearFilters"
             >
               清除
             </button>
           </form>
 
+          <div v-if="showFilters" class="filter-panel">
+            <label class="filter-field">
+              <span>分类</span>
+              <select v-model.number="draftFilters.categoryId">
+                <option :value="0">全部分类</option>
+                <option v-for="item in store.taxonomy.categories" :key="item.id" :value="item.id">
+                  {{ item.name }}
+                </option>
+              </select>
+            </label>
+
+            <label class="filter-field">
+              <span>时间</span>
+              <select v-model="draftFilters.archive">
+                <option value="">全部时间</option>
+                <option v-for="item in store.taxonomy.archives" :key="item.archive" :value="item.archive">
+                  {{ item.archive }}（{{ item.count }}）
+                </option>
+              </select>
+            </label>
+
+            <div class="filter-actions">
+              <button type="button" class="secondary-btn" @click="applyFilters">应用筛选</button>
+            </div>
+          </div>
+
           <div class="search-meta">
             <span>共 {{ store.blogList.total }} 篇</span>
             <span>第 {{ currentPage }} / {{ totalPages }} 页</span>
+          </div>
+
+          <div class="active-filters">
+            <span v-if="activeCategoryName" class="filter-chip">分类：{{ activeCategoryName }}</span>
+            <span v-if="store.blogList.archive" class="filter-chip">时间：{{ store.blogList.archive }}</span>
           </div>
         </div>
 
         <div v-if="store.loading" class="empty-state">
           <h3>正在加载博客列表</h3>
-          <p>请稍候，正在获取最新内容</p>
+          <p>请稍候，正在获取最新内容。</p>
         </div>
 
         <template v-else>
           <div class="blog-list" v-if="store.blogs.length">
             <BlogCard
               v-for="blog in store.blogs"
-              :key="blog.ID"
+              :key="blog.id || blog.ID"
               :blog="blog"
             />
           </div>
@@ -77,44 +106,21 @@
           </div>
         </template>
       </div>
-
-      <aside class="home-side">
-        <div class="create-module">
-          <p class="create-kicker">Blog Studio</p>
-          <h3>创作</h3>
-          <p class="create-text">写下新的标题和内容，发布一篇新的博客</p>
-
-          <RouterLink
-            v-if="store.user.isLogin"
-            to="/blog/create"
-            class="create-action"
-          >
-            进入创作
-          </RouterLink>
-
-          <RouterLink
-            v-else
-            to="/login"
-            class="create-action"
-          >
-            登录后创作
-          </RouterLink>
-        </div>
-      </aside>
     </div>
   </section>
 </template>
 
 <script setup>
-/*
-  这个页面负责加载并展示带分页和搜索的博客列表
-*/
-import { computed, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { computed, onMounted, reactive, ref } from 'vue'
 import BlogCard from '../components/BlogCard.vue'
 import { appStore as store, refreshAppState, refreshBlogList } from '../store/appStore'
 
 const keywordInput = ref('')
+const showFilters = ref(false)
+const draftFilters = reactive({
+  categoryId: 0,
+  archive: ''
+})
 
 const currentPage = computed(() => store.blogList.page || 1)
 const totalPages = computed(() => {
@@ -123,33 +129,62 @@ const totalPages = computed(() => {
   return Math.max(1, Math.ceil(total / pageSize))
 })
 
+const hasActiveFilters = computed(() => (
+  Boolean(store.blogList.keyword || store.blogList.categoryId || store.blogList.archive)
+))
+
+const activeCategoryName = computed(() => {
+  if (!store.blogList.categoryId) {
+    return ''
+  }
+  const target = store.taxonomy.categories.find((item) => Number(item.id) === Number(store.blogList.categoryId))
+  return target?.name || ''
+})
+
 const emptyTitle = computed(() => (
-  store.blogList.keyword ? '没有找到匹配的博客' : '还没有内容'
+  hasActiveFilters.value ? '没有找到匹配的博客' : '还没有内容'
 ))
 
 const emptyDescription = computed(() => (
-  store.blogList.keyword
-    ? `没有找到和“${store.blogList.keyword}”相关的内容，试试换个关键词。`
+  hasActiveFilters.value
+    ? '当前搜索或筛选条件下没有结果，可以尝试更换关键词、分类或时间。'
     : '当前还没有可展示的博客内容。'
 ))
 
 onMounted(async () => {
   keywordInput.value = store.blogList.keyword || ''
+  draftFilters.categoryId = Number(store.blogList.categoryId || 0)
+  draftFilters.archive = store.blogList.archive || ''
   await refreshAppState({ page: 1 })
 })
 
 async function handleSearch() {
   await refreshBlogList({
     page: 1,
-    keyword: keywordInput.value
+    keyword: keywordInput.value,
+    categoryId: draftFilters.categoryId,
+    archive: draftFilters.archive
   })
 }
 
-async function handleClearSearch() {
-  keywordInput.value = ''
+async function applyFilters() {
   await refreshBlogList({
     page: 1,
-    keyword: ''
+    keyword: keywordInput.value,
+    categoryId: draftFilters.categoryId,
+    archive: draftFilters.archive
+  })
+}
+
+async function handleClearFilters() {
+  keywordInput.value = ''
+  draftFilters.categoryId = 0
+  draftFilters.archive = ''
+  await refreshBlogList({
+    page: 1,
+    keyword: '',
+    categoryId: 0,
+    archive: ''
   })
 }
 
@@ -158,16 +193,14 @@ async function changePage(page) {
     return
   }
 
-  await refreshBlogList({
-    page
-  })
+  await refreshBlogList({ page })
 }
 </script>
 
 <style scoped>
 .home-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 280px;
+  grid-template-columns: minmax(0, 1fr);
   gap: 24px;
   align-items: start;
 }
@@ -190,6 +223,7 @@ async function changePage(page) {
 .search-form {
   display: flex;
   gap: 12px;
+  align-items: center;
 }
 
 .search-input {
@@ -201,9 +235,39 @@ async function changePage(page) {
   font-size: 14px;
 }
 
+.filter-panel {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+  border-radius: 16px;
+  background: #f7f3ec;
+}
+
+.filter-field {
+  display: grid;
+  gap: 6px;
+}
+
+.filter-field span {
+  color: #5f6f82;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.filter-field select {
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid #d5dee8;
+  border-radius: 12px;
+  background: #fff;
+}
+
 .search-btn,
 .clear-btn,
-.pager-btn {
+.pager-btn,
+.filter-toggle-btn,
+.secondary-btn {
   border: none;
   border-radius: 14px;
   padding: 12px 16px;
@@ -212,27 +276,33 @@ async function changePage(page) {
 }
 
 .search-btn,
-.pager-btn {
+.pager-btn,
+.filter-toggle-btn {
   background: #203040;
   color: #fff;
 }
 
-.clear-btn {
+.clear-btn,
+.secondary-btn {
   background: #e8edf2;
   color: #203040;
 }
 
-.pager-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.search-meta {
+.search-meta,
+.active-filters {
   display: flex;
   justify-content: space-between;
   gap: 12px;
   color: #5f6f82;
   font-size: 14px;
+  flex-wrap: wrap;
+}
+
+.filter-chip {
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: #f3ecde;
+  color: #7b5427;
 }
 
 .blog-list {
@@ -255,58 +325,9 @@ async function changePage(page) {
   font-size: 14px;
 }
 
-.home-side {
-  position: sticky;
-  top: 16px;
-}
-
-.create-module {
-  display: grid;
-  gap: 12px;
-  padding: 24px;
-  border-radius: 24px;
-  background: rgba(255, 255, 255, 0.88);
-  box-shadow: 0 18px 40px rgba(40, 58, 80, 0.08);
-}
-
-.create-kicker {
-  margin: 0;
-  color: #9c6a43;
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.create-module h3 {
-  margin: 0;
-  font-size: 28px;
-}
-
-.create-text {
-  margin: 0;
-  color: #5f6f82;
-  line-height: 1.7;
-}
-
-.create-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 12px 16px;
-  border-radius: 14px;
-  background: #203040;
-  color: #fff;
-  font-weight: 600;
-}
-
-@media (max-width: 900px) {
-  .home-layout {
+@media (max-width: 760px) {
+  .filter-panel {
     grid-template-columns: 1fr;
-  }
-
-  .home-side {
-    position: static;
   }
 }
 

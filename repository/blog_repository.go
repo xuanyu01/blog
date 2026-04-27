@@ -1,5 +1,5 @@
 /*
-这个文件实现博客数据的数据访问逻辑
+实现博客数据访问逻辑。
 */
 package repository
 
@@ -7,53 +7,210 @@ import (
 	"blog/model"
 	"database/sql"
 	"fmt"
+	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
 
-// BlogRepository 负责读取和写入博客数据
+// BlogRepository 负责博客数据读写。
 type BlogRepository struct {
 	db *sql.DB
 }
 
-// NewBlogRepository 创建博客仓储实例
+// NewBlogRepository 创建博客仓储。
 func NewBlogRepository(db *sql.DB) *BlogRepository {
 	return &BlogRepository{db: db}
 }
 
-// List 查询博客列表 支持分页和关键字搜索
-func (r *BlogRepository) List(page, pageSize int, keyword string) (*model.BlogListResult, error) {
-	keyword = strings.TrimSpace(keyword)
+// List 返回前台博客列表。
+func (r *BlogRepository) List(page, pageSize int, query model.BlogListQuery) (*model.BlogListResult, error) {
 	offset := (page - 1) * pageSize
-	likeKeyword := "%" + keyword + "%"
+	keyword := strings.TrimSpace(query.Keyword)
+	archive := strings.TrimSpace(query.Archive)
 
 	countQuery := `
 		SELECT COUNT(*)
 		FROM posts p
 		LEFT JOIN users u ON u.id = p.author_id
+		LEFT JOIN post_contents pc ON pc.post_id = p.id
+		WHERE p.deleted_at IS NULL AND p.status = 'published'
 	`
 	listQuery := `
-		SELECT p.id, p.author_id, p.title, COALESCE(p.slug, ''), COALESCE(p.summary, ''), COALESCE(pc.content_markdown, ''), COALESCE(u.username, ''), p.created_at
+		SELECT
+			p.id,
+			p.author_id,
+			COALESCE(p.category_id, 0),
+			COALESCE(c.name, ''),
+			COALESCE(c.slug, ''),
+			p.title,
+			COALESCE(p.slug, ''),
+			COALESCE(p.summary, ''),
+			COALESCE(pc.content_markdown, ''),
+			COALESCE(u.username, ''),
+			p.status,
+			p.is_top,
+			p.created_at,
+			p.updated_at,
+			p.published_at,
+			COALESCE(ps.view_count, 0),
+			COALESCE(ps.like_count, 0),
+			COALESCE(ps.favorite_count, 0),
+			COALESCE(ps.comment_count, 0),
+			COALESCE(GROUP_CONCAT(DISTINCT CONCAT(t.id, '::', t.name, '::', t.slug) ORDER BY t.name SEPARATOR '||'), '')
+	`
+
+	countArgs, listArgs := buildBlogListFilters(keyword, query.CategoryID, archive)
+	countQuery += countArgs.query
+	if keyword != "" {
+		listQuery += `,
+			MAX(CASE
+				WHEN COALESCE(t.name, '') LIKE ? OR COALESCE(t.slug, '') LIKE ? THEN 1
+				ELSE 0
+			END) AS tag_match_score,
+			MAX(CASE
+				WHEN p.title LIKE ? THEN 2
+				WHEN COALESCE(p.summary, '') LIKE ? THEN 1
+				WHEN COALESCE(pc.content_text, pc.content_markdown, '') LIKE ? THEN 0
+				ELSE -1
+			END) AS text_match_score
+		`
+		listArgs.args = append(listArgs.args,
+			"%"+keyword+"%", "%"+keyword+"%",
+			"%"+keyword+"%", "%"+keyword+"%", "%"+keyword+"%",
+		)
+	} else {
+		listQuery += `,
+			0 AS tag_match_score,
+			0 AS text_match_score
+		`
+	}
+	listQuery += `
+		FROM posts p
+		LEFT JOIN users u ON u.id = p.author_id
+		LEFT JOIN categories c ON c.id = p.category_id
+		LEFT JOIN post_contents pc ON pc.post_id = p.id
+		LEFT JOIN post_stats ps ON ps.post_id = p.id
+		LEFT JOIN post_tags pt ON pt.post_id = p.id
+		LEFT JOIN tags t ON t.id = pt.tag_id
+		WHERE p.deleted_at IS NULL AND p.status = 'published'
+	`
+	listQuery += listArgs.query
+
+	var total int
+	if err := r.db.QueryRow(countQuery, countArgs.args...).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	listQuery += `
+		GROUP BY
+			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
+			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count
+		ORDER BY tag_match_score DESC, text_match_score DESC, p.is_top DESC, p.published_at DESC, p.id DESC
+		LIMIT ? OFFSET ?
+	`
+	listArgs.args = append(listArgs.args, pageSize, offset)
+
+	rows, err := r.db.Query(listQuery, listArgs.args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items, err := scanBlogRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.BlogListResult{
+		Items:      items,
+		Page:       page,
+		PageSize:   pageSize,
+		Total:      total,
+		Keyword:    keyword,
+		CategoryID: query.CategoryID,
+		Archive:    archive,
+	}, nil
+}
+
+// AdminList 返回后台博客列表。
+func (r *BlogRepository) AdminList(page, pageSize int, keyword, author, status string) (*model.BlogListResult, error) {
+	keyword = strings.TrimSpace(keyword)
+	author = strings.TrimSpace(author)
+	status = strings.TrimSpace(status)
+	offset := (page - 1) * pageSize
+	likeKeyword := "%" + keyword + "%"
+	likeAuthor := "%" + author + "%"
+
+	countQuery := `
+		SELECT COUNT(*)
 		FROM posts p
 		LEFT JOIN users u ON u.id = p.author_id
 		LEFT JOIN post_contents pc ON pc.post_id = p.id
+		WHERE p.deleted_at IS NULL
+	`
+	listQuery := `
+		SELECT
+			p.id,
+			p.author_id,
+			COALESCE(p.category_id, 0),
+			COALESCE(c.name, ''),
+			COALESCE(c.slug, ''),
+			p.title,
+			COALESCE(p.slug, ''),
+			COALESCE(p.summary, ''),
+			COALESCE(pc.content_markdown, ''),
+			COALESCE(u.username, ''),
+			p.status,
+			p.is_top,
+			p.created_at,
+			p.updated_at,
+			p.published_at,
+			COALESCE(ps.view_count, 0),
+			COALESCE(ps.like_count, 0),
+			COALESCE(ps.favorite_count, 0),
+			COALESCE(ps.comment_count, 0),
+			COALESCE(GROUP_CONCAT(DISTINCT CONCAT(t.id, '::', t.name, '::', t.slug) ORDER BY t.name SEPARATOR '||'), '')
+		FROM posts p
+		LEFT JOIN users u ON u.id = p.author_id
+		LEFT JOIN categories c ON c.id = p.category_id
+		LEFT JOIN post_contents pc ON pc.post_id = p.id
+		LEFT JOIN post_stats ps ON ps.post_id = p.id
+		LEFT JOIN post_tags pt ON pt.post_id = p.id
+		LEFT JOIN tags t ON t.id = pt.tag_id
+		WHERE p.deleted_at IS NULL
 	`
 
 	var countArgs []any
 	var listArgs []any
-	baseFilter := `
-		WHERE p.deleted_at IS NULL AND p.status = 'published'
-	`
-	countQuery += baseFilter
-	listQuery += baseFilter
 	if keyword != "" {
 		filter := `
-			AND (p.title LIKE ? OR COALESCE(p.summary, '') LIKE ? OR COALESCE(pc.content_text, pc.content_markdown, '') LIKE ? OR COALESCE(u.username, '') LIKE ?)
+			AND (
+				p.title LIKE ?
+				OR COALESCE(p.summary, '') LIKE ?
+				OR COALESCE(pc.content_text, pc.content_markdown, '') LIKE ?
+				OR COALESCE(u.username, '') LIKE ?
+			)
 		`
 		countQuery += filter
 		listQuery += filter
 		countArgs = append(countArgs, likeKeyword, likeKeyword, likeKeyword, likeKeyword)
 		listArgs = append(listArgs, likeKeyword, likeKeyword, likeKeyword, likeKeyword)
+	}
+	if author != "" {
+		filter := ` AND COALESCE(u.username, '') LIKE ?`
+		countQuery += filter
+		listQuery += filter
+		countArgs = append(countArgs, likeAuthor)
+		listArgs = append(listArgs, likeAuthor)
+	}
+	if status != "" {
+		filter := ` AND p.status = ?`
+		countQuery += filter
+		listQuery += filter
+		countArgs = append(countArgs, status)
+		listArgs = append(listArgs, status)
 	}
 
 	var total int
@@ -62,7 +219,11 @@ func (r *BlogRepository) List(page, pageSize int, keyword string) (*model.BlogLi
 	}
 
 	listQuery += `
-		ORDER BY p.published_at DESC, p.id DESC
+		GROUP BY
+			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
+			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count
+		ORDER BY p.is_top DESC, p.created_at DESC, p.id DESC
 		LIMIT ? OFFSET ?
 	`
 	listArgs = append(listArgs, pageSize, offset)
@@ -73,24 +234,13 @@ func (r *BlogRepository) List(page, pageSize int, keyword string) (*model.BlogLi
 	}
 	defer rows.Close()
 
-	var blogs []model.Blog
-	for rows.Next() {
-		var blog model.Blog
-
-		// 列表接口把博客标识 作者和创建时间一起带给前端
-		// 这样详情跳转 权限判断和展示都不需要再猜测来源
-		if err := rows.Scan(&blog.ID, &blog.AuthorID, &blog.Title, &blog.Slug, &blog.Summary, &blog.Content, &blog.AuthorUsername, &blog.CreatedAt); err != nil {
-			return nil, err
-		}
-		blogs = append(blogs, blog)
-	}
-
-	if err := rows.Err(); err != nil {
+	items, err := scanBlogRows(rows)
+	if err != nil {
 		return nil, err
 	}
 
 	return &model.BlogListResult{
-		Items:    blogs,
+		Items:    items,
 		Page:     page,
 		PageSize: pageSize,
 		Total:    total,
@@ -98,7 +248,224 @@ func (r *BlogRepository) List(page, pageSize int, keyword string) (*model.BlogLi
 	}, nil
 }
 
-// Create 创建新博客
+// ListByAuthor 返回指定作者的博客列表。
+func (r *BlogRepository) ListByAuthor(page, pageSize int, authorUsername, status string) (*model.BlogListResult, error) {
+	authorUsername = strings.TrimSpace(authorUsername)
+	status = strings.TrimSpace(status)
+	offset := (page - 1) * pageSize
+
+	query := `
+		SELECT
+			p.id,
+			p.author_id,
+			COALESCE(p.category_id, 0),
+			COALESCE(c.name, ''),
+			COALESCE(c.slug, ''),
+			p.title,
+			COALESCE(p.slug, ''),
+			COALESCE(p.summary, ''),
+			COALESCE(pc.content_markdown, ''),
+			COALESCE(u.username, ''),
+			p.status,
+			p.is_top,
+			p.created_at,
+			p.updated_at,
+			p.published_at,
+			COALESCE(ps.view_count, 0),
+			COALESCE(ps.like_count, 0),
+			COALESCE(ps.favorite_count, 0),
+			COALESCE(ps.comment_count, 0),
+			COALESCE(GROUP_CONCAT(DISTINCT CONCAT(t.id, '::', t.name, '::', t.slug) ORDER BY t.name SEPARATOR '||'), '')
+		FROM posts p
+		LEFT JOIN users u ON u.id = p.author_id
+		LEFT JOIN categories c ON c.id = p.category_id
+		LEFT JOIN post_contents pc ON pc.post_id = p.id
+		LEFT JOIN post_stats ps ON ps.post_id = p.id
+		LEFT JOIN post_tags pt ON pt.post_id = p.id
+		LEFT JOIN tags t ON t.id = pt.tag_id
+		WHERE p.deleted_at IS NULL AND COALESCE(u.username, '') = ?
+	`
+	countQuery := `
+		SELECT COUNT(*)
+		FROM posts p
+		LEFT JOIN users u ON u.id = p.author_id
+		WHERE p.deleted_at IS NULL AND COALESCE(u.username, '') = ?
+	`
+
+	args := []any{authorUsername}
+	countArgs := []any{authorUsername}
+	if status != "" {
+		query += ` AND p.status = ?`
+		countQuery += ` AND p.status = ?`
+		args = append(args, status)
+		countArgs = append(countArgs, status)
+	}
+
+	var total int
+	if err := r.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	query += `
+		GROUP BY
+			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
+			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count
+		ORDER BY p.updated_at DESC, p.id DESC
+		LIMIT ? OFFSET ?
+	`
+	args = append(args, pageSize, offset)
+
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items, err := scanBlogRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.BlogListResult{
+		Items:    items,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+	}, nil
+}
+
+// ListFavoritesByUser 返回指定用户收藏的博客列表。
+func (r *BlogRepository) ListFavoritesByUser(page, pageSize int, username string) (*model.BlogListResult, error) {
+	username = strings.TrimSpace(username)
+	offset := (page - 1) * pageSize
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM post_favorites pf
+		INNER JOIN users fav_u ON fav_u.id = pf.user_id
+		INNER JOIN posts p ON p.id = pf.post_id
+		WHERE fav_u.username = ? AND fav_u.deleted_at IS NULL
+			AND p.deleted_at IS NULL AND p.status = 'published'
+	`
+	listQuery := `
+		SELECT
+			p.id,
+			p.author_id,
+			COALESCE(p.category_id, 0),
+			COALESCE(c.name, ''),
+			COALESCE(c.slug, ''),
+			p.title,
+			COALESCE(p.slug, ''),
+			COALESCE(p.summary, ''),
+			COALESCE(pc.content_markdown, ''),
+			COALESCE(u.username, ''),
+			p.status,
+			p.is_top,
+			p.created_at,
+			p.updated_at,
+			p.published_at,
+			COALESCE(ps.view_count, 0),
+			COALESCE(ps.like_count, 0),
+			COALESCE(ps.favorite_count, 0),
+			COALESCE(ps.comment_count, 0),
+			COALESCE(GROUP_CONCAT(DISTINCT CONCAT(t.id, '::', t.name, '::', t.slug) ORDER BY t.name SEPARATOR '||'), '')
+		FROM post_favorites pf
+		INNER JOIN users fav_u ON fav_u.id = pf.user_id
+		INNER JOIN posts p ON p.id = pf.post_id
+		LEFT JOIN users u ON u.id = p.author_id
+		LEFT JOIN categories c ON c.id = p.category_id
+		LEFT JOIN post_contents pc ON pc.post_id = p.id
+		LEFT JOIN post_stats ps ON ps.post_id = p.id
+		LEFT JOIN post_tags pt ON pt.post_id = p.id
+		LEFT JOIN tags t ON t.id = pt.tag_id
+		WHERE fav_u.username = ? AND fav_u.deleted_at IS NULL
+			AND p.deleted_at IS NULL AND p.status = 'published'
+		GROUP BY
+			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
+			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count, pf.created_at
+		ORDER BY pf.created_at DESC, p.id DESC
+		LIMIT ? OFFSET ?
+	`
+
+	var total int
+	if err := r.db.QueryRow(countQuery, username).Scan(&total); err != nil {
+		return nil, err
+	}
+
+	rows, err := r.db.Query(listQuery, username, pageSize, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items, err := scanBlogRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.BlogListResult{
+		Items:    items,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+	}, nil
+}
+
+// GetByID 按文章 ID 读取博客详情。
+func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
+	rows, err := r.db.Query(`
+		SELECT
+			p.id,
+			p.author_id,
+			COALESCE(p.category_id, 0),
+			COALESCE(c.name, ''),
+			COALESCE(c.slug, ''),
+			p.title,
+			COALESCE(p.slug, ''),
+			COALESCE(p.summary, ''),
+			COALESCE(pc.content_markdown, ''),
+			COALESCE(u.username, ''),
+			p.status,
+			p.is_top,
+			p.created_at,
+			p.updated_at,
+			p.published_at,
+			COALESCE(ps.view_count, 0),
+			COALESCE(ps.like_count, 0),
+			COALESCE(ps.favorite_count, 0),
+			COALESCE(ps.comment_count, 0),
+			COALESCE(GROUP_CONCAT(DISTINCT CONCAT(t.id, '::', t.name, '::', t.slug) ORDER BY t.name SEPARATOR '||'), '')
+		FROM posts p
+		LEFT JOIN users u ON u.id = p.author_id
+		LEFT JOIN categories c ON c.id = p.category_id
+		LEFT JOIN post_contents pc ON pc.post_id = p.id
+		LEFT JOIN post_stats ps ON ps.post_id = p.id
+		LEFT JOIN post_tags pt ON pt.post_id = p.id
+		LEFT JOIN tags t ON t.id = pt.tag_id
+		WHERE p.id = ? AND p.deleted_at IS NULL
+		GROUP BY
+			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
+			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count
+	`, blogID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	blogs, err := scanBlogRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(blogs) == 0 {
+		return nil, sql.ErrNoRows
+	}
+	return &blogs[0], nil
+}
+
+// Create 写入一篇新博客。
 func (r *BlogRepository) Create(blog *model.Blog) error {
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -106,8 +473,12 @@ func (r *BlogRepository) Create(blog *model.Blog) error {
 	}
 	defer tx.Rollback()
 
-	var authorID int64
-	if err := tx.QueryRow("SELECT id FROM users WHERE username=? AND deleted_at IS NULL", blog.AuthorUsername).Scan(&authorID); err != nil {
+	authorID, err := getUserIDByUsername(tx, blog.AuthorUsername)
+	if err != nil {
+		return err
+	}
+
+	if err := ensureCategoryExists(tx, blog.CategoryID); err != nil {
 		return err
 	}
 
@@ -116,10 +487,20 @@ func (r *BlogRepository) Create(blog *model.Blog) error {
 		slug = fmt.Sprintf("post-%d", time.Now().UnixNano())
 	}
 
+	var publishedAt any
+	if blog.Status == "published" {
+		now := time.Now()
+		publishedAt = now
+		blog.PublishedAt = &now
+	} else {
+		publishedAt = nil
+		blog.PublishedAt = nil
+	}
+
 	result, err := tx.Exec(`
-		INSERT INTO posts (author_id, title, slug, summary, status, visibility, published_at)
-		VALUES (?, ?, ?, ?, 'published', 'public', NOW())
-	`, authorID, blog.Title, slug, blog.Summary)
+		INSERT INTO posts (author_id, category_id, title, slug, summary, status, visibility, published_at, is_top)
+		VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, 'public', ?, ?)
+	`, authorID, blog.CategoryID, blog.Title, slug, blog.Summary, blog.Status, publishedAt, blog.IsTop)
 	if err != nil {
 		return err
 	}
@@ -128,11 +509,13 @@ func (r *BlogRepository) Create(blog *model.Blog) error {
 	if err != nil {
 		return err
 	}
+	blog.ID = postID
+	blog.AuthorID = authorID
 
 	if _, err := tx.Exec(`
 		INSERT INTO post_contents (post_id, content_markdown, content_text, word_count)
 		VALUES (?, ?, ?, ?)
-	`, postID, blog.Content, blog.Content, len([]rune(blog.Content))); err != nil {
+	`, postID, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content)); err != nil {
 		return err
 	}
 
@@ -140,35 +523,27 @@ func (r *BlogRepository) Create(blog *model.Blog) error {
 		return err
 	}
 
-	return tx.Commit()
-}
-
-// GetByID 查询指定博客的完整信息
-func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
-	var blog model.Blog
-
-	err := r.db.QueryRow(`
-		SELECT p.id, p.author_id, p.title, COALESCE(p.slug, ''), COALESCE(p.summary, ''), COALESCE(pc.content_markdown, ''), COALESCE(u.username, ''), p.created_at
-		FROM posts p
-		LEFT JOIN users u ON u.id = p.author_id
-		LEFT JOIN post_contents pc ON pc.post_id = p.id
-		WHERE p.id=? AND p.deleted_at IS NULL
-	`, blogID).Scan(&blog.ID, &blog.AuthorID, &blog.Title, &blog.Slug, &blog.Summary, &blog.Content, &blog.AuthorUsername, &blog.CreatedAt)
+	tags, err := replacePostTags(tx, postID, blog.Tags)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	blog.Tags = tags
+
+	if err := tx.Commit(); err != nil {
+		return err
 	}
 
-	return &blog, nil
+	return r.populateCategory(blog)
 }
 
-// GetAuthorByID 查询指定博客的作者用户名
+// GetAuthorByID 按文章 ID 读取作者用户名。
 func (r *BlogRepository) GetAuthorByID(blogID int64) (string, error) {
 	var authorUsername string
 	err := r.db.QueryRow(`
 		SELECT COALESCE(u.username, '')
 		FROM posts p
 		LEFT JOIN users u ON u.id = p.author_id
-		WHERE p.id=? AND p.deleted_at IS NULL
+		WHERE p.id = ? AND p.deleted_at IS NULL
 	`, blogID).Scan(&authorUsername)
 	if err != nil {
 		return "", err
@@ -176,7 +551,7 @@ func (r *BlogRepository) GetAuthorByID(blogID int64) (string, error) {
 	return authorUsername, nil
 }
 
-// Update 更新指定博客的标题和内容
+// Update 更新博客内容和状态。
 func (r *BlogRepository) Update(blog *model.Blog) error {
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -184,27 +559,663 @@ func (r *BlogRepository) Update(blog *model.Blog) error {
 	}
 	defer tx.Rollback()
 
+	if err := ensureCategoryExists(tx, blog.CategoryID); err != nil {
+		return err
+	}
+
+	var publishedAt any
+	if blog.Status == "published" {
+		if blog.PublishedAt != nil {
+			publishedAt = *blog.PublishedAt
+		} else {
+			now := time.Now()
+			publishedAt = now
+			blog.PublishedAt = &now
+		}
+	} else {
+		publishedAt = nil
+	}
+
 	if _, err := tx.Exec(`
 		UPDATE posts
-		SET title=?, summary=?, updated_at=NOW()
-		WHERE id=? AND deleted_at IS NULL
-	`, blog.Title, blog.Summary, blog.ID); err != nil {
+		SET category_id = NULLIF(?, 0), title = ?, summary = ?, status = ?, is_top = ?, published_at = ?, updated_at = NOW()
+		WHERE id = ? AND deleted_at IS NULL
+	`, blog.CategoryID, blog.Title, blog.Summary, blog.Status, blog.IsTop, publishedAt, blog.ID); err != nil {
 		return err
 	}
 
 	if _, err := tx.Exec(`
 		UPDATE post_contents
-		SET content_markdown=?, content_text=?, word_count=?, updated_at=NOW()
-		WHERE post_id=?
-	`, blog.Content, blog.Content, len([]rune(blog.Content)), blog.ID); err != nil {
+		SET content_markdown = ?, content_text = ?, word_count = ?, updated_at = NOW()
+		WHERE post_id = ?
+	`, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content), blog.ID); err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	tags, err := replacePostTags(tx, blog.ID, blog.Tags)
+	if err != nil {
+		return err
+	}
+	blog.Tags = tags
+
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+
+	return r.populateCategory(blog)
 }
 
-// Delete 删除指定博客
+// Review 更新审核状态和置顶状态。
+func (r *BlogRepository) Review(blogID int64, status string, isTop bool) error {
+	var publishedAt any
+	if status == "published" {
+		publishedAt = time.Now()
+	}
+
+	result, err := r.db.Exec(`
+		UPDATE posts
+		SET status = ?, is_top = ?, published_at = ?, updated_at = NOW()
+		WHERE id = ? AND deleted_at IS NULL
+	`, status, isTop, publishedAt, blogID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// Delete 删除博客。
 func (r *BlogRepository) Delete(blogID int64) error {
-	_, err := r.db.Exec("DELETE FROM posts WHERE id=?", blogID)
+	_, err := r.db.Exec("DELETE FROM posts WHERE id = ?", blogID)
 	return err
+}
+
+// ListCategories 返回分类列表。
+func (r *BlogRepository) ListCategories() ([]model.Category, error) {
+	rows, err := r.db.Query(`
+		SELECT
+			c.id,
+			c.name,
+			c.slug,
+			c.status,
+			COUNT(CASE WHEN p.deleted_at IS NULL AND p.status = 'published' THEN 1 END) AS post_count
+		FROM categories c
+		LEFT JOIN posts p ON p.category_id = c.id
+		WHERE c.status = 'active'
+		GROUP BY c.id, c.name, c.slug, c.sort_order
+		ORDER BY c.sort_order ASC, c.id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []model.Category
+	for rows.Next() {
+		var item model.Category
+		if err := rows.Scan(&item.ID, &item.Name, &item.Slug, &item.Status, &item.PostCount); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// ListCategoriesForManage 返回后台分类列表。
+func (r *BlogRepository) ListCategoriesForManage() ([]model.Category, error) {
+	rows, err := r.db.Query(`
+		SELECT
+			c.id,
+			c.name,
+			c.slug,
+			c.status,
+			COUNT(CASE WHEN p.deleted_at IS NULL THEN 1 END) AS post_count
+		FROM categories c
+		LEFT JOIN posts p ON p.category_id = c.id
+		GROUP BY c.id, c.name, c.slug, c.status, c.sort_order
+		ORDER BY c.status = 'active' DESC, c.sort_order ASC, c.id ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []model.Category
+	for rows.Next() {
+		var item model.Category
+		if err := rows.Scan(&item.ID, &item.Name, &item.Slug, &item.Status, &item.PostCount); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// CreateCategory 创建分类。
+func (r *BlogRepository) CreateCategory(category *model.Category) error {
+	result, err := r.db.Exec(`
+		INSERT INTO categories (name, slug, status)
+		VALUES (?, ?, 'active')
+	`, category.Name, category.Slug)
+	if err != nil {
+		return err
+	}
+
+	categoryID, err := result.LastInsertId()
+	if err != nil {
+		return err
+	}
+	category.ID = categoryID
+	return nil
+}
+
+// UpdateCategory 更新分类。
+func (r *BlogRepository) UpdateCategory(category *model.Category) error {
+	result, err := r.db.Exec(`
+		UPDATE categories
+		SET name = ?, slug = ?, status = 'active', updated_at = NOW()
+		WHERE id = ?
+	`, category.Name, category.Slug, category.ID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// HideCategory 隐藏分类。
+func (r *BlogRepository) HideCategory(categoryID int64) error {
+	result, err := r.db.Exec(`
+		UPDATE categories
+		SET status = 'hidden', updated_at = NOW()
+		WHERE id = ?
+	`, categoryID)
+	if err != nil {
+		return err
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if affected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+// ListTags 返回标签列表。
+func (r *BlogRepository) ListTags() ([]model.Tag, error) {
+	rows, err := r.db.Query(`
+		SELECT
+			t.id,
+			t.name,
+			t.slug,
+			COUNT(CASE WHEN p.deleted_at IS NULL AND p.status = 'published' THEN 1 END) AS post_count
+		FROM tags t
+		LEFT JOIN post_tags pt ON pt.tag_id = t.id
+		LEFT JOIN posts p ON p.id = pt.post_id
+		GROUP BY t.id, t.name, t.slug
+		ORDER BY post_count DESC, t.name ASC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []model.Tag
+	for rows.Next() {
+		var item model.Tag
+		if err := rows.Scan(&item.ID, &item.Name, &item.Slug, &item.PostCount); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// ListArchives 返回归档列表。
+func (r *BlogRepository) ListArchives() ([]model.ArchiveItem, error) {
+	rows, err := r.db.Query(`
+		SELECT
+			DATE_FORMAT(p.published_at, '%Y-%m') AS archive,
+			YEAR(p.published_at) AS year_num,
+			MONTH(p.published_at) AS month_num,
+			COUNT(*) AS total
+		FROM posts p
+		WHERE p.deleted_at IS NULL AND p.status = 'published' AND p.published_at IS NOT NULL
+		GROUP BY archive, year_num, month_num
+		ORDER BY archive DESC
+	`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var items []model.ArchiveItem
+	for rows.Next() {
+		var item model.ArchiveItem
+		if err := rows.Scan(&item.Archive, &item.Year, &item.Month, &item.Count); err != nil {
+			return nil, err
+		}
+		items = append(items, item)
+	}
+	return items, rows.Err()
+}
+
+// IncrementViewCount 增加阅读量。
+func (r *BlogRepository) IncrementViewCount(blogID int64) error {
+	_, err := r.db.Exec(`
+		UPDATE post_stats
+		SET view_count = view_count + 1, updated_at = NOW()
+		WHERE post_id = ?
+	`, blogID)
+	return err
+}
+
+// HasLiked 判断当前用户是否已点赞。
+func (r *BlogRepository) HasLiked(blogID int64, username string) (bool, error) {
+	return hasInteraction(r.db, "post_likes", blogID, username)
+}
+
+// HasFavorited 判断当前用户是否已收藏。
+func (r *BlogRepository) HasFavorited(blogID int64, username string) (bool, error) {
+	return hasInteraction(r.db, "post_favorites", blogID, username)
+}
+
+// ToggleLike 切换点赞状态并返回最新点赞数。
+func (r *BlogRepository) ToggleLike(blogID int64, username string) (bool, int64, error) {
+	return toggleInteraction(r.db, "post_likes", "like_count", blogID, username)
+}
+
+// ToggleFavorite 切换收藏状态并返回最新收藏数。
+func (r *BlogRepository) ToggleFavorite(blogID int64, username string) (bool, int64, error) {
+	return toggleInteraction(r.db, "post_favorites", "favorite_count", blogID, username)
+}
+
+func (r *BlogRepository) populateCategory(blog *model.Blog) error {
+	if blog.CategoryID == 0 {
+		blog.CategoryName = ""
+		blog.CategorySlug = ""
+		return nil
+	}
+
+	var name string
+	var slug string
+	if err := r.db.QueryRow(`
+		SELECT name, slug
+		FROM categories
+		WHERE id = ?
+	`, blog.CategoryID).Scan(&name, &slug); err != nil {
+		return err
+	}
+	blog.CategoryName = name
+	blog.CategorySlug = slug
+	return nil
+}
+
+type listFilter struct {
+	query string
+	args  []any
+}
+
+func buildBlogListFilters(keyword string, categoryID int64, archive string) (listFilter, listFilter) {
+	likeKeyword := "%" + keyword + "%"
+	count := listFilter{}
+	list := listFilter{}
+
+	if keyword != "" {
+		filter := `
+			AND (
+				p.title LIKE ?
+				OR COALESCE(p.summary, '') LIKE ?
+				OR COALESCE(pc.content_text, pc.content_markdown, '') LIKE ?
+				OR COALESCE(u.username, '') LIKE ?
+				OR EXISTS (
+					SELECT 1
+					FROM post_tags pt2
+					INNER JOIN tags t2 ON t2.id = pt2.tag_id
+					WHERE pt2.post_id = p.id
+						AND (COALESCE(t2.name, '') LIKE ? OR COALESCE(t2.slug, '') LIKE ?)
+				)
+			)
+		`
+		count.query += filter
+		list.query += filter
+		for _, target := range []*listFilter{&count, &list} {
+			target.args = append(target.args, likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword, likeKeyword)
+		}
+	}
+
+	if categoryID > 0 {
+		filter := ` AND p.category_id = ?`
+		count.query += filter
+		list.query += filter
+		count.args = append(count.args, categoryID)
+		list.args = append(list.args, categoryID)
+	}
+
+	if archive != "" {
+		filter := ` AND DATE_FORMAT(p.published_at, '%Y-%m') = ?`
+		count.query += filter
+		list.query += filter
+		count.args = append(count.args, archive)
+		list.args = append(list.args, archive)
+	}
+
+	return count, list
+}
+
+func scanBlogRows(rows *sql.Rows) ([]model.Blog, error) {
+	var blogs []model.Blog
+	columns, err := rows.Columns()
+	if err != nil {
+		return nil, err
+	}
+	hasMatchScores := len(columns) >= 22
+
+	for rows.Next() {
+		var blog model.Blog
+		var publishedAt sql.NullTime
+		var tagTokens string
+		var tagMatchScore int
+		var textMatchScore int
+
+		dest := []any{
+			&blog.ID,
+			&blog.AuthorID,
+			&blog.CategoryID,
+			&blog.CategoryName,
+			&blog.CategorySlug,
+			&blog.Title,
+			&blog.Slug,
+			&blog.Summary,
+			&blog.Content,
+			&blog.AuthorUsername,
+			&blog.Status,
+			&blog.IsTop,
+			&blog.CreatedAt,
+			&blog.UpdatedAt,
+			&publishedAt,
+			&blog.Stats.ViewCount,
+			&blog.Stats.LikeCount,
+			&blog.Stats.FavoriteCount,
+			&blog.Stats.CommentCount,
+			&tagTokens,
+		}
+		if hasMatchScores {
+			dest = append(dest, &tagMatchScore, &textMatchScore)
+		}
+
+		if err := rows.Scan(dest...); err != nil {
+			return nil, err
+		}
+
+		if publishedAt.Valid {
+			blog.PublishedAt = &publishedAt.Time
+		}
+		blog.Tags = parseTagTokens(tagTokens)
+		blogs = append(blogs, blog)
+	}
+
+	return blogs, rows.Err()
+}
+
+func parseTagTokens(raw string) []model.Tag {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+
+	parts := strings.Split(raw, "||")
+	items := make([]model.Tag, 0, len(parts))
+	for _, part := range parts {
+		fields := strings.Split(part, "::")
+		if len(fields) != 3 {
+			continue
+		}
+
+		tagID, err := strconv.ParseInt(fields[0], 10, 64)
+		if err != nil {
+			continue
+		}
+
+		items = append(items, model.Tag{
+			ID:   tagID,
+			Name: fields[1],
+			Slug: fields[2],
+		})
+	}
+
+	return items
+}
+
+func getUserIDByUsername(tx *sql.Tx, username string) (int64, error) {
+	var userID int64
+	if err := tx.QueryRow(`
+		SELECT id
+		FROM users
+		WHERE username = ? AND deleted_at IS NULL
+	`, username).Scan(&userID); err != nil {
+		return 0, err
+	}
+	return userID, nil
+}
+
+func ensureCategoryExists(tx *sql.Tx, categoryID int64) error {
+	if categoryID == 0 {
+		return nil
+	}
+
+	var exists int
+	if err := tx.QueryRow(`
+		SELECT 1
+		FROM categories
+		WHERE id = ? AND status = 'active'
+	`, categoryID).Scan(&exists); err != nil {
+		if err == sql.ErrNoRows {
+			return errorsNew("category not found")
+		}
+		return err
+	}
+	return nil
+}
+
+func replacePostTags(tx *sql.Tx, postID int64, tags []model.Tag) ([]model.Tag, error) {
+	if _, err := tx.Exec(`DELETE FROM post_tags WHERE post_id = ?`, postID); err != nil {
+		return nil, err
+	}
+
+	if len(tags) == 0 {
+		return nil, nil
+	}
+
+	result := make([]model.Tag, 0, len(tags))
+	for _, tag := range tags {
+		tagName := strings.TrimSpace(tag.Name)
+		tagSlug := strings.TrimSpace(tag.Slug)
+		if tagName == "" || tagSlug == "" {
+			continue
+		}
+
+		var tagID int64
+		err := tx.QueryRow(`
+			SELECT id
+			FROM tags
+			WHERE slug = ?
+		`, tagSlug).Scan(&tagID)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				res, err := tx.Exec(`INSERT INTO tags (name, slug) VALUES (?, ?)`, tagName, tagSlug)
+				if err != nil {
+					return nil, err
+				}
+				tagID, err = res.LastInsertId()
+				if err != nil {
+					return nil, err
+				}
+			} else {
+				return nil, err
+			}
+		}
+
+		if _, err := tx.Exec(`
+			INSERT INTO post_tags (post_id, tag_id)
+			VALUES (?, ?)
+		`, postID, tagID); err != nil {
+			return nil, err
+		}
+
+		result = append(result, model.Tag{
+			ID:   tagID,
+			Name: tagName,
+			Slug: tagSlug,
+		})
+	}
+
+	return result, nil
+}
+
+func hasInteraction(db *sql.DB, table string, blogID int64, username string) (bool, error) {
+	username = strings.TrimSpace(username)
+	if username == "" {
+		return false, nil
+	}
+
+	var exists int
+	err := db.QueryRow(fmt.Sprintf(`
+		SELECT 1
+		FROM %s pi
+		INNER JOIN users u ON u.id = pi.user_id
+		WHERE pi.post_id = ? AND u.username = ? AND u.deleted_at IS NULL
+	`, table), blogID, username).Scan(&exists)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return false, nil
+		}
+		return false, err
+	}
+	return true, nil
+}
+
+func toggleInteraction(db *sql.DB, table, statColumn string, blogID int64, username string) (bool, int64, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return false, 0, err
+	}
+	defer tx.Rollback()
+
+	userID, err := getUserIDByUsername(tx, username)
+	if err != nil {
+		return false, 0, err
+	}
+
+	var exists int
+	err = tx.QueryRow(fmt.Sprintf(`
+		SELECT 1
+		FROM %s
+		WHERE post_id = ? AND user_id = ?
+	`, table), blogID, userID).Scan(&exists)
+	active := false
+
+	switch err {
+	case nil:
+		if _, err := tx.Exec(fmt.Sprintf(`
+			DELETE FROM %s
+			WHERE post_id = ? AND user_id = ?
+		`, table), blogID, userID); err != nil {
+			return false, 0, err
+		}
+
+		if _, err := tx.Exec(fmt.Sprintf(`
+			UPDATE post_stats
+			SET %s = CASE WHEN %s > 0 THEN %s - 1 ELSE 0 END, updated_at = NOW()
+			WHERE post_id = ?
+		`, statColumn, statColumn, statColumn), blogID); err != nil {
+			return false, 0, err
+		}
+	case sql.ErrNoRows:
+		if _, err := tx.Exec(fmt.Sprintf(`
+			INSERT INTO %s (post_id, user_id)
+			VALUES (?, ?)
+		`, table), blogID, userID); err != nil {
+			return false, 0, err
+		}
+
+		if _, err := tx.Exec(fmt.Sprintf(`
+			UPDATE post_stats
+			SET %s = %s + 1, updated_at = NOW()
+			WHERE post_id = ?
+		`, statColumn, statColumn), blogID); err != nil {
+			return false, 0, err
+		}
+		active = true
+	default:
+		return false, 0, err
+	}
+
+	var count int64
+	if err := tx.QueryRow(fmt.Sprintf(`
+		SELECT %s
+		FROM post_stats
+		WHERE post_id = ?
+	`, statColumn), blogID).Scan(&count); err != nil {
+		return false, 0, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, 0, err
+	}
+
+	return active, count, nil
+}
+
+var markdownCleanupReplacer = strings.NewReplacer(
+	"\r", " ",
+	"\n", " ",
+	"\t", " ",
+	"#", " ",
+	"*", " ",
+	"_", " ",
+	"`", " ",
+	">", " ",
+	"-", " ",
+	"|", " ",
+	"[", " ",
+	"]", " ",
+	"(", " ",
+	")", " ",
+	"!", " ",
+)
+
+var multiSpaceRegexp = regexp.MustCompile(`\s+`)
+
+// buildPlainTextFromMarkdown 去掉 Markdown 标记并压缩空白。
+func buildPlainTextFromMarkdown(content string) string {
+	plain := markdownCleanupReplacer.Replace(content)
+	plain = multiSpaceRegexp.ReplaceAllString(plain, " ")
+	return strings.TrimSpace(plain)
+}
+
+// countWordsFromMarkdown 统计 Markdown 纯文本长度。
+func countWordsFromMarkdown(content string) int {
+	return len([]rune(buildPlainTextFromMarkdown(content)))
+}
+
+func errorsNew(message string) error {
+	return fmt.Errorf("%s", message)
 }

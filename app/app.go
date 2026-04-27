@@ -1,4 +1,4 @@
-﻿/*
+/*
 该文件负责应用装配，把配置、存储、仓储、服务和路由连接起来
 */
 package app
@@ -28,7 +28,12 @@ type App struct {
 
 // New 创建并装配一个可运行的应用实例
 func New() (*App, error) {
-	cfg := config.New()
+	cfg, err := config.New()
+	if err != nil {
+		return nil, err
+	}
+
+	session.SetExpire(cfg.Session.Expire)
 
 	// 先初始化底层基础设施，确保数据库和缓存都可用后再继续向上组装
 	db, err := store.NewMySQL(cfg.MySQL)
@@ -44,12 +49,14 @@ func New() (*App, error) {
 	// 按照 repository -> service -> handler -> router 的依赖方向逐层组装
 	// 这样 main 入口可以保持简洁，模块边界也更清晰
 	blogRepo := repository.NewBlogRepository(db)
+	commentRepo := repository.NewCommentRepository(db)
 	userRepo := repository.NewUserRepository(db)
 	sessionStore := session.NewRedisStore(redisClient)
 
 	blogService := service.NewBlogService(blogRepo)
+	commentService := service.NewCommentService(commentRepo, blogRepo)
 	authService := service.NewAuthService(userRepo, sessionStore)
-	webHandler := handler.NewWebHandler(blogService, authService)
+	webHandler := handler.NewWebHandler(blogService, commentService, authService)
 	server := router.New(webHandler)
 
 	return &App{

@@ -1,9 +1,9 @@
 /*
-这个文件定义用户相关的领域模型和展示模型
+定义用户相关模型。
 */
 package model
 
-// User 表示数据库中的用户实体
+// User 表示数据库中的用户记录。
 type User struct {
 	ID          int64
 	Username    string
@@ -13,7 +13,7 @@ type User struct {
 	Status      string
 }
 
-// UserView 表示前端页面使用的用户展示数据
+// UserView 表示前端使用的用户信息。
 type UserView struct {
 	UserName    string `json:"userName"`
 	DisplayName string `json:"displayName"`
@@ -22,26 +22,26 @@ type UserView struct {
 	IsLogin     bool   `json:"isLogin"`
 }
 
-// UserProfileUpdate 表示用户资料修改请求
+// UserProfileUpdate 表示资料修改请求。
 type UserProfileUpdate struct {
 	DisplayName string `json:"displayName"`
 	ImageRoute  string `json:"imageRoute"`
 }
 
-// UserPermissionUpdate 表示用户权限修改请求
+// UserPermissionUpdate 表示权限修改请求。
 type UserPermissionUpdate struct {
 	Username   string `json:"username"`
 	Permission string `json:"permission"`
 }
 
-// UserListItem 表示管理员界面中的用户列表项
+// UserListItem 表示后台用户列表中的单项数据。
 type UserListItem struct {
 	Username    string `json:"username"`
 	DisplayName string `json:"displayName"`
 	Permission  string `json:"permission"`
 }
 
-// PasswordUpdate 表示密码修改请求
+// PasswordUpdate 表示密码修改请求。
 type PasswordUpdate struct {
 	CurrentPassword string `json:"currentPassword"`
 	NewPassword     string `json:"newPassword"`
