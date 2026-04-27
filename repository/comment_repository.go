@@ -6,21 +6,23 @@ package repository
 import (
 	"blog/model"
 	"database/sql"
+
+	"gorm.io/gorm"
 )
 
 // CommentRepository 负责评论读写。
 type CommentRepository struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
 // NewCommentRepository 创建评论仓储。
-func NewCommentRepository(db *sql.DB) *CommentRepository {
+func NewCommentRepository(db *gorm.DB) *CommentRepository {
 	return &CommentRepository{db: db}
 }
 
 // ListByPostID 返回指定博客下的一级评论。
 func (r *CommentRepository) ListByPostID(postID int64) ([]model.Comment, error) {
-	rows, err := r.db.Query(`
+	rows, err := r.db.Raw(`
 		SELECT
 			c.id,
 			c.post_id,
@@ -36,7 +38,7 @@ func (r *CommentRepository) ListByPostID(postID int64) ([]model.Comment, error) 
 			AND c.deleted_at IS NULL
 			AND c.status = 'published'
 		ORDER BY c.created_at ASC, c.id ASC
-	`, postID)
+	`, postID).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -59,41 +61,37 @@ func (r *CommentRepository) ListByPostID(postID int64) ([]model.Comment, error) 
 		comments = append(comments, comment)
 	}
 
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-
-	return comments, nil
+	return comments, rows.Err()
 }
 
 // Create 写入一条一级评论并返回详情。
 func (r *CommentRepository) Create(postID int64, username, content string) (*model.Comment, error) {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return nil, err
+	tx := r.db.Begin()
+	if tx.Error != nil {
+		return nil, tx.Error
 	}
 	defer tx.Rollback()
 
 	var userID int64
 	var displayName string
-	if err := tx.QueryRow(`
+	if err := tx.Raw(`
 		SELECT id, COALESCE(NULLIF(display_name, ''), username, '')
 		FROM users
 		WHERE username = ? AND deleted_at IS NULL
-	`, username).Scan(&userID, &displayName); err != nil {
+	`, username).Row().Scan(&userID, &displayName); err != nil {
 		return nil, err
 	}
 
-	result, err := tx.Exec(`
+	result := tx.Exec(`
 		INSERT INTO comments (post_id, user_id, content, status)
 		VALUES (?, ?, ?, 'published')
 	`, postID, userID, content)
-	if err != nil {
-		return nil, err
+	if result.Error != nil {
+		return nil, result.Error
 	}
 
-	commentID, err := result.LastInsertId()
-	if err != nil {
+	var commentID int64
+	if err := tx.Raw("SELECT LAST_INSERT_ID()").Row().Scan(&commentID); err != nil {
 		return nil, err
 	}
 
@@ -105,23 +103,23 @@ func (r *CommentRepository) Create(postID int64, username, content string) (*mod
 		DisplayName: displayName,
 		Content:     content,
 	}
-	if err := tx.QueryRow(`
+	if err := tx.Raw(`
 		SELECT created_at
 		FROM comments
 		WHERE id = ?
-	`, commentID).Scan(&comment.CreatedAt); err != nil {
+	`, commentID).Row().Scan(&comment.CreatedAt); err != nil {
 		return nil, err
 	}
 
-	if _, err := tx.Exec(`
+	if err := tx.Exec(`
 		UPDATE post_stats
 		SET comment_count = comment_count + 1, updated_at = NOW()
 		WHERE post_id = ?
-	`, postID); err != nil {
+	`, postID).Error; err != nil {
 		return nil, err
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit().Error; err != nil {
 		return nil, err
 	}
 
@@ -131,12 +129,12 @@ func (r *CommentRepository) Create(postID int64, username, content string) (*mod
 // GetAuthorByID 返回评论作者用户名。
 func (r *CommentRepository) GetAuthorByID(commentID int64) (string, error) {
 	var username string
-	err := r.db.QueryRow(`
+	err := r.db.Raw(`
 		SELECT COALESCE(u.username, '')
 		FROM comments c
 		INNER JOIN users u ON u.id = c.user_id
 		WHERE c.id = ? AND c.deleted_at IS NULL
-	`, commentID).Scan(&username)
+	`, commentID).Row().Scan(&username)
 	if err != nil {
 		return "", err
 	}
@@ -145,45 +143,42 @@ func (r *CommentRepository) GetAuthorByID(commentID int64) (string, error) {
 
 // Delete 软删除评论并同步文章评论数。
 func (r *CommentRepository) Delete(commentID int64) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
+	tx := r.db.Begin()
+	if tx.Error != nil {
+		return tx.Error
 	}
 	defer tx.Rollback()
 
 	var postID int64
-	if err := tx.QueryRow(`
+	if err := tx.Raw(`
 		SELECT post_id
 		FROM comments
 		WHERE id = ? AND deleted_at IS NULL
-	`, commentID).Scan(&postID); err != nil {
+	`, commentID).Row().Scan(&postID); err != nil {
 		return err
 	}
 
-	result, err := tx.Exec(`
+	result := tx.Exec(`
 		UPDATE comments
 		SET deleted_at = NOW(), updated_at = NOW(), status = 'hidden'
 		WHERE id = ? AND deleted_at IS NULL
 	`, commentID)
-	if err != nil {
-		return err
+	if result.Error != nil {
+		return result.Error
 	}
 
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
+	affected := result.RowsAffected
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
 
-	if _, err := tx.Exec(`
+	if err := tx.Exec(`
 		UPDATE post_stats
 		SET comment_count = CASE WHEN comment_count > 0 THEN comment_count - 1 ELSE 0 END, updated_at = NOW()
 		WHERE post_id = ?
-	`, postID); err != nil {
+	`, postID).Error; err != nil {
 		return err
 	}
 
-	return tx.Commit()
+	return tx.Commit().Error
 }

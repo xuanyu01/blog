@@ -7,6 +7,7 @@ import (
 	"blog/model"
 	"database/sql"
 	"fmt"
+	"gorm.io/gorm"
 	"regexp"
 	"strconv"
 	"strings"
@@ -15,11 +16,11 @@ import (
 
 // BlogRepository 负责博客数据读写。
 type BlogRepository struct {
-	db *sql.DB
+	db *gorm.DB
 }
 
 // NewBlogRepository 创建博客仓储。
-func NewBlogRepository(db *sql.DB) *BlogRepository {
+func NewBlogRepository(db *gorm.DB) *BlogRepository {
 	return &BlogRepository{db: db}
 }
 
@@ -98,7 +99,7 @@ func (r *BlogRepository) List(page, pageSize int, query model.BlogListQuery) (*m
 	listQuery += listArgs.query
 
 	var total int
-	if err := r.db.QueryRow(countQuery, countArgs.args...).Scan(&total); err != nil {
+	if err := r.db.Raw(countQuery, countArgs.args...).Row().Scan(&total); err != nil {
 		return nil, err
 	}
 
@@ -112,7 +113,7 @@ func (r *BlogRepository) List(page, pageSize int, query model.BlogListQuery) (*m
 	`
 	listArgs.args = append(listArgs.args, pageSize, offset)
 
-	rows, err := r.db.Query(listQuery, listArgs.args...)
+	rows, err := r.db.Raw(listQuery, listArgs.args...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -214,7 +215,7 @@ func (r *BlogRepository) AdminList(page, pageSize int, keyword, author, status s
 	}
 
 	var total int
-	if err := r.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+	if err := r.db.Raw(countQuery, countArgs...).Row().Scan(&total); err != nil {
 		return nil, err
 	}
 
@@ -228,7 +229,7 @@ func (r *BlogRepository) AdminList(page, pageSize int, keyword, author, status s
 	`
 	listArgs = append(listArgs, pageSize, offset)
 
-	rows, err := r.db.Query(listQuery, listArgs...)
+	rows, err := r.db.Raw(listQuery, listArgs...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -302,7 +303,7 @@ func (r *BlogRepository) ListByAuthor(page, pageSize int, authorUsername, status
 	}
 
 	var total int
-	if err := r.db.QueryRow(countQuery, countArgs...).Scan(&total); err != nil {
+	if err := r.db.Raw(countQuery, countArgs...).Row().Scan(&total); err != nil {
 		return nil, err
 	}
 
@@ -316,7 +317,7 @@ func (r *BlogRepository) ListByAuthor(page, pageSize int, authorUsername, status
 	`
 	args = append(args, pageSize, offset)
 
-	rows, err := r.db.Query(query, args...)
+	rows, err := r.db.Raw(query, args...).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -390,11 +391,11 @@ func (r *BlogRepository) ListFavoritesByUser(page, pageSize int, username string
 	`
 
 	var total int
-	if err := r.db.QueryRow(countQuery, username).Scan(&total); err != nil {
+	if err := r.db.Raw(countQuery, username).Row().Scan(&total); err != nil {
 		return nil, err
 	}
 
-	rows, err := r.db.Query(listQuery, username, pageSize, offset)
+	rows, err := r.db.Raw(listQuery, username, pageSize, offset).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -415,7 +416,7 @@ func (r *BlogRepository) ListFavoritesByUser(page, pageSize int, username string
 
 // GetByID 按文章 ID 读取博客详情。
 func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
-	rows, err := r.db.Query(`
+	rows, err := r.db.Raw(`
 		SELECT
 			p.id,
 			p.author_id,
@@ -449,7 +450,7 @@ func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
 			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
 			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
 			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count
-	`, blogID)
+	`, blogID).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -467,9 +468,9 @@ func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
 
 // Create 写入一篇新博客。
 func (r *BlogRepository) Create(blog *model.Blog) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
+	tx := r.db.Begin()
+	if tx.Error != nil {
+		return tx.Error
 	}
 	defer tx.Rollback()
 
@@ -497,29 +498,29 @@ func (r *BlogRepository) Create(blog *model.Blog) error {
 		blog.PublishedAt = nil
 	}
 
-	result, err := tx.Exec(`
+	result := tx.Exec(`
 		INSERT INTO posts (author_id, category_id, title, slug, summary, status, visibility, published_at, is_top)
 		VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, 'public', ?, ?)
 	`, authorID, blog.CategoryID, blog.Title, slug, blog.Summary, blog.Status, publishedAt, blog.IsTop)
-	if err != nil {
-		return err
+	if result.Error != nil {
+		return result.Error
 	}
 
-	postID, err := result.LastInsertId()
-	if err != nil {
+	var postID int64
+	if err := tx.Raw("SELECT LAST_INSERT_ID()").Row().Scan(&postID); err != nil {
 		return err
 	}
 	blog.ID = postID
 	blog.AuthorID = authorID
 
-	if _, err := tx.Exec(`
+	if err := tx.Exec(`
 		INSERT INTO post_contents (post_id, content_markdown, content_text, word_count)
 		VALUES (?, ?, ?, ?)
-	`, postID, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content)); err != nil {
+	`, postID, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content)).Error; err != nil {
 		return err
 	}
 
-	if _, err := tx.Exec("INSERT INTO post_stats (post_id) VALUES (?)", postID); err != nil {
+	if err := tx.Exec("INSERT INTO post_stats (post_id) VALUES (?)", postID).Error; err != nil {
 		return err
 	}
 
@@ -529,7 +530,7 @@ func (r *BlogRepository) Create(blog *model.Blog) error {
 	}
 	blog.Tags = tags
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit().Error; err != nil {
 		return err
 	}
 
@@ -539,12 +540,12 @@ func (r *BlogRepository) Create(blog *model.Blog) error {
 // GetAuthorByID 按文章 ID 读取作者用户名。
 func (r *BlogRepository) GetAuthorByID(blogID int64) (string, error) {
 	var authorUsername string
-	err := r.db.QueryRow(`
+	err := r.db.Raw(`
 		SELECT COALESCE(u.username, '')
 		FROM posts p
 		LEFT JOIN users u ON u.id = p.author_id
 		WHERE p.id = ? AND p.deleted_at IS NULL
-	`, blogID).Scan(&authorUsername)
+	`, blogID).Row().Scan(&authorUsername)
 	if err != nil {
 		return "", err
 	}
@@ -553,9 +554,9 @@ func (r *BlogRepository) GetAuthorByID(blogID int64) (string, error) {
 
 // Update 更新博客内容和状态。
 func (r *BlogRepository) Update(blog *model.Blog) error {
-	tx, err := r.db.Begin()
-	if err != nil {
-		return err
+	tx := r.db.Begin()
+	if tx.Error != nil {
+		return tx.Error
 	}
 	defer tx.Rollback()
 
@@ -576,19 +577,19 @@ func (r *BlogRepository) Update(blog *model.Blog) error {
 		publishedAt = nil
 	}
 
-	if _, err := tx.Exec(`
+	if err := tx.Exec(`
 		UPDATE posts
 		SET category_id = NULLIF(?, 0), title = ?, summary = ?, status = ?, is_top = ?, published_at = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
-	`, blog.CategoryID, blog.Title, blog.Summary, blog.Status, blog.IsTop, publishedAt, blog.ID); err != nil {
+	`, blog.CategoryID, blog.Title, blog.Summary, blog.Status, blog.IsTop, publishedAt, blog.ID).Error; err != nil {
 		return err
 	}
 
-	if _, err := tx.Exec(`
+	if err := tx.Exec(`
 		UPDATE post_contents
 		SET content_markdown = ?, content_text = ?, word_count = ?, updated_at = NOW()
 		WHERE post_id = ?
-	`, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content), blog.ID); err != nil {
+	`, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content), blog.ID).Error; err != nil {
 		return err
 	}
 
@@ -598,7 +599,7 @@ func (r *BlogRepository) Update(blog *model.Blog) error {
 	}
 	blog.Tags = tags
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit().Error; err != nil {
 		return err
 	}
 
@@ -612,19 +613,16 @@ func (r *BlogRepository) Review(blogID int64, status string, isTop bool) error {
 		publishedAt = time.Now()
 	}
 
-	result, err := r.db.Exec(`
+	result := r.db.Exec(`
 		UPDATE posts
 		SET status = ?, is_top = ?, published_at = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`, status, isTop, publishedAt, blogID)
-	if err != nil {
-		return err
+	if result.Error != nil {
+		return result.Error
 	}
 
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
+	affected := result.RowsAffected
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
@@ -633,13 +631,12 @@ func (r *BlogRepository) Review(blogID int64, status string, isTop bool) error {
 
 // Delete 删除博客。
 func (r *BlogRepository) Delete(blogID int64) error {
-	_, err := r.db.Exec("DELETE FROM posts WHERE id = ?", blogID)
-	return err
+	return r.db.Exec("DELETE FROM posts WHERE id = ?", blogID).Error
 }
 
 // ListCategories 返回分类列表。
 func (r *BlogRepository) ListCategories() ([]model.Category, error) {
-	rows, err := r.db.Query(`
+	rows, err := r.db.Raw(`
 		SELECT
 			c.id,
 			c.name,
@@ -651,7 +648,7 @@ func (r *BlogRepository) ListCategories() ([]model.Category, error) {
 		WHERE c.status = 'active'
 		GROUP BY c.id, c.name, c.slug, c.sort_order
 		ORDER BY c.sort_order ASC, c.id ASC
-	`)
+	`).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -670,7 +667,7 @@ func (r *BlogRepository) ListCategories() ([]model.Category, error) {
 
 // ListCategoriesForManage 返回后台分类列表。
 func (r *BlogRepository) ListCategoriesForManage() ([]model.Category, error) {
-	rows, err := r.db.Query(`
+	rows, err := r.db.Raw(`
 		SELECT
 			c.id,
 			c.name,
@@ -681,7 +678,7 @@ func (r *BlogRepository) ListCategoriesForManage() ([]model.Category, error) {
 		LEFT JOIN posts p ON p.category_id = c.id
 		GROUP BY c.id, c.name, c.slug, c.status, c.sort_order
 		ORDER BY c.status = 'active' DESC, c.sort_order ASC, c.id ASC
-	`)
+	`).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -700,16 +697,16 @@ func (r *BlogRepository) ListCategoriesForManage() ([]model.Category, error) {
 
 // CreateCategory 创建分类。
 func (r *BlogRepository) CreateCategory(category *model.Category) error {
-	result, err := r.db.Exec(`
+	result := r.db.Exec(`
 		INSERT INTO categories (name, slug, status)
 		VALUES (?, ?, 'active')
 	`, category.Name, category.Slug)
-	if err != nil {
-		return err
+	if result.Error != nil {
+		return result.Error
 	}
 
-	categoryID, err := result.LastInsertId()
-	if err != nil {
+	var categoryID int64
+	if err := r.db.Raw("SELECT LAST_INSERT_ID()").Row().Scan(&categoryID); err != nil {
 		return err
 	}
 	category.ID = categoryID
@@ -718,19 +715,16 @@ func (r *BlogRepository) CreateCategory(category *model.Category) error {
 
 // UpdateCategory 更新分类。
 func (r *BlogRepository) UpdateCategory(category *model.Category) error {
-	result, err := r.db.Exec(`
+	result := r.db.Exec(`
 		UPDATE categories
 		SET name = ?, slug = ?, status = 'active', updated_at = NOW()
 		WHERE id = ?
 	`, category.Name, category.Slug, category.ID)
-	if err != nil {
-		return err
+	if result.Error != nil {
+		return result.Error
 	}
 
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
+	affected := result.RowsAffected
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
@@ -739,19 +733,16 @@ func (r *BlogRepository) UpdateCategory(category *model.Category) error {
 
 // HideCategory 隐藏分类。
 func (r *BlogRepository) HideCategory(categoryID int64) error {
-	result, err := r.db.Exec(`
+	result := r.db.Exec(`
 		UPDATE categories
 		SET status = 'hidden', updated_at = NOW()
 		WHERE id = ?
 	`, categoryID)
-	if err != nil {
-		return err
+	if result.Error != nil {
+		return result.Error
 	}
 
-	affected, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
+	affected := result.RowsAffected
 	if affected == 0 {
 		return sql.ErrNoRows
 	}
@@ -760,7 +751,7 @@ func (r *BlogRepository) HideCategory(categoryID int64) error {
 
 // ListTags 返回标签列表。
 func (r *BlogRepository) ListTags() ([]model.Tag, error) {
-	rows, err := r.db.Query(`
+	rows, err := r.db.Raw(`
 		SELECT
 			t.id,
 			t.name,
@@ -771,7 +762,7 @@ func (r *BlogRepository) ListTags() ([]model.Tag, error) {
 		LEFT JOIN posts p ON p.id = pt.post_id
 		GROUP BY t.id, t.name, t.slug
 		ORDER BY post_count DESC, t.name ASC
-	`)
+	`).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -790,7 +781,7 @@ func (r *BlogRepository) ListTags() ([]model.Tag, error) {
 
 // ListArchives 返回归档列表。
 func (r *BlogRepository) ListArchives() ([]model.ArchiveItem, error) {
-	rows, err := r.db.Query(`
+	rows, err := r.db.Raw(`
 		SELECT
 			DATE_FORMAT(p.published_at, '%Y-%m') AS archive,
 			YEAR(p.published_at) AS year_num,
@@ -800,7 +791,7 @@ func (r *BlogRepository) ListArchives() ([]model.ArchiveItem, error) {
 		WHERE p.deleted_at IS NULL AND p.status = 'published' AND p.published_at IS NOT NULL
 		GROUP BY archive, year_num, month_num
 		ORDER BY archive DESC
-	`)
+	`).Rows()
 	if err != nil {
 		return nil, err
 	}
@@ -819,12 +810,11 @@ func (r *BlogRepository) ListArchives() ([]model.ArchiveItem, error) {
 
 // IncrementViewCount 增加阅读量。
 func (r *BlogRepository) IncrementViewCount(blogID int64) error {
-	_, err := r.db.Exec(`
+	return r.db.Exec(`
 		UPDATE post_stats
 		SET view_count = view_count + 1, updated_at = NOW()
 		WHERE post_id = ?
-	`, blogID)
-	return err
+	`, blogID).Error
 }
 
 // HasLiked 判断当前用户是否已点赞。
@@ -856,11 +846,11 @@ func (r *BlogRepository) populateCategory(blog *model.Blog) error {
 
 	var name string
 	var slug string
-	if err := r.db.QueryRow(`
+	if err := r.db.Raw(`
 		SELECT name, slug
 		FROM categories
 		WHERE id = ?
-	`, blog.CategoryID).Scan(&name, &slug); err != nil {
+	`, blog.CategoryID).Row().Scan(&name, &slug); err != nil {
 		return err
 	}
 	blog.CategoryName = name
@@ -1004,29 +994,29 @@ func parseTagTokens(raw string) []model.Tag {
 	return items
 }
 
-func getUserIDByUsername(tx *sql.Tx, username string) (int64, error) {
+func getUserIDByUsername(tx *gorm.DB, username string) (int64, error) {
 	var userID int64
-	if err := tx.QueryRow(`
+	if err := tx.Raw(`
 		SELECT id
 		FROM users
 		WHERE username = ? AND deleted_at IS NULL
-	`, username).Scan(&userID); err != nil {
+	`, username).Row().Scan(&userID); err != nil {
 		return 0, err
 	}
 	return userID, nil
 }
 
-func ensureCategoryExists(tx *sql.Tx, categoryID int64) error {
+func ensureCategoryExists(tx *gorm.DB, categoryID int64) error {
 	if categoryID == 0 {
 		return nil
 	}
 
 	var exists int
-	if err := tx.QueryRow(`
+	if err := tx.Raw(`
 		SELECT 1
 		FROM categories
 		WHERE id = ? AND status = 'active'
-	`, categoryID).Scan(&exists); err != nil {
+	`, categoryID).Row().Scan(&exists); err != nil {
 		if err == sql.ErrNoRows {
 			return errorsNew("category not found")
 		}
@@ -1035,8 +1025,8 @@ func ensureCategoryExists(tx *sql.Tx, categoryID int64) error {
 	return nil
 }
 
-func replacePostTags(tx *sql.Tx, postID int64, tags []model.Tag) ([]model.Tag, error) {
-	if _, err := tx.Exec(`DELETE FROM post_tags WHERE post_id = ?`, postID); err != nil {
+func replacePostTags(tx *gorm.DB, postID int64, tags []model.Tag) ([]model.Tag, error) {
+	if err := tx.Exec(`DELETE FROM post_tags WHERE post_id = ?`, postID).Error; err != nil {
 		return nil, err
 	}
 
@@ -1053,19 +1043,17 @@ func replacePostTags(tx *sql.Tx, postID int64, tags []model.Tag) ([]model.Tag, e
 		}
 
 		var tagID int64
-		err := tx.QueryRow(`
+		err := tx.Raw(`
 			SELECT id
 			FROM tags
 			WHERE slug = ?
-		`, tagSlug).Scan(&tagID)
+		`, tagSlug).Row().Scan(&tagID)
 		if err != nil {
 			if err == sql.ErrNoRows {
-				res, err := tx.Exec(`INSERT INTO tags (name, slug) VALUES (?, ?)`, tagName, tagSlug)
-				if err != nil {
+				if err := tx.Exec(`INSERT INTO tags (name, slug) VALUES (?, ?)`, tagName, tagSlug).Error; err != nil {
 					return nil, err
 				}
-				tagID, err = res.LastInsertId()
-				if err != nil {
+				if err := tx.Raw("SELECT LAST_INSERT_ID()").Row().Scan(&tagID); err != nil {
 					return nil, err
 				}
 			} else {
@@ -1073,10 +1061,10 @@ func replacePostTags(tx *sql.Tx, postID int64, tags []model.Tag) ([]model.Tag, e
 			}
 		}
 
-		if _, err := tx.Exec(`
+		if err := tx.Exec(`
 			INSERT INTO post_tags (post_id, tag_id)
 			VALUES (?, ?)
-		`, postID, tagID); err != nil {
+		`, postID, tagID).Error; err != nil {
 			return nil, err
 		}
 
@@ -1090,19 +1078,19 @@ func replacePostTags(tx *sql.Tx, postID int64, tags []model.Tag) ([]model.Tag, e
 	return result, nil
 }
 
-func hasInteraction(db *sql.DB, table string, blogID int64, username string) (bool, error) {
+func hasInteraction(db *gorm.DB, table string, blogID int64, username string) (bool, error) {
 	username = strings.TrimSpace(username)
 	if username == "" {
 		return false, nil
 	}
 
 	var exists int
-	err := db.QueryRow(fmt.Sprintf(`
+	err := db.Raw(fmt.Sprintf(`
 		SELECT 1
 		FROM %s pi
 		INNER JOIN users u ON u.id = pi.user_id
 		WHERE pi.post_id = ? AND u.username = ? AND u.deleted_at IS NULL
-	`, table), blogID, username).Scan(&exists)
+	`, table), blogID, username).Row().Scan(&exists)
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return false, nil
@@ -1112,10 +1100,10 @@ func hasInteraction(db *sql.DB, table string, blogID int64, username string) (bo
 	return true, nil
 }
 
-func toggleInteraction(db *sql.DB, table, statColumn string, blogID int64, username string) (bool, int64, error) {
-	tx, err := db.Begin()
-	if err != nil {
-		return false, 0, err
+func toggleInteraction(db *gorm.DB, table, statColumn string, blogID int64, username string) (bool, int64, error) {
+	tx := db.Begin()
+	if tx.Error != nil {
+		return false, 0, tx.Error
 	}
 	defer tx.Rollback()
 
@@ -1125,42 +1113,42 @@ func toggleInteraction(db *sql.DB, table, statColumn string, blogID int64, usern
 	}
 
 	var exists int
-	err = tx.QueryRow(fmt.Sprintf(`
+	err = tx.Raw(fmt.Sprintf(`
 		SELECT 1
 		FROM %s
 		WHERE post_id = ? AND user_id = ?
-	`, table), blogID, userID).Scan(&exists)
+	`, table), blogID, userID).Row().Scan(&exists)
 	active := false
 
 	switch err {
 	case nil:
-		if _, err := tx.Exec(fmt.Sprintf(`
+		if err := tx.Exec(fmt.Sprintf(`
 			DELETE FROM %s
 			WHERE post_id = ? AND user_id = ?
-		`, table), blogID, userID); err != nil {
+		`, table), blogID, userID).Error; err != nil {
 			return false, 0, err
 		}
 
-		if _, err := tx.Exec(fmt.Sprintf(`
+		if err := tx.Exec(fmt.Sprintf(`
 			UPDATE post_stats
 			SET %s = CASE WHEN %s > 0 THEN %s - 1 ELSE 0 END, updated_at = NOW()
 			WHERE post_id = ?
-		`, statColumn, statColumn, statColumn), blogID); err != nil {
+		`, statColumn, statColumn, statColumn), blogID).Error; err != nil {
 			return false, 0, err
 		}
 	case sql.ErrNoRows:
-		if _, err := tx.Exec(fmt.Sprintf(`
+		if err := tx.Exec(fmt.Sprintf(`
 			INSERT INTO %s (post_id, user_id)
 			VALUES (?, ?)
-		`, table), blogID, userID); err != nil {
+		`, table), blogID, userID).Error; err != nil {
 			return false, 0, err
 		}
 
-		if _, err := tx.Exec(fmt.Sprintf(`
+		if err := tx.Exec(fmt.Sprintf(`
 			UPDATE post_stats
 			SET %s = %s + 1, updated_at = NOW()
 			WHERE post_id = ?
-		`, statColumn, statColumn), blogID); err != nil {
+		`, statColumn, statColumn), blogID).Error; err != nil {
 			return false, 0, err
 		}
 		active = true
@@ -1169,15 +1157,15 @@ func toggleInteraction(db *sql.DB, table, statColumn string, blogID int64, usern
 	}
 
 	var count int64
-	if err := tx.QueryRow(fmt.Sprintf(`
+	if err := tx.Raw(fmt.Sprintf(`
 		SELECT %s
 		FROM post_stats
 		WHERE post_id = ?
-	`, statColumn), blogID).Scan(&count); err != nil {
+	`, statColumn), blogID).Row().Scan(&count); err != nil {
 		return false, 0, err
 	}
 
-	if err := tx.Commit(); err != nil {
+	if err := tx.Commit().Error; err != nil {
 		return false, 0, err
 	}
 
