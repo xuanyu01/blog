@@ -1,3 +1,6 @@
+/*
+blog_service_test.go 覆盖博客服务的核心业务测试。
+*/
 package service
 
 import (
@@ -41,6 +44,7 @@ type fakeBlogRepo struct {
 	toggleFavCount  int64
 }
 
+// List 模拟前台博客列表查询。
 func (f *fakeBlogRepo) List(page, pageSize int, query model.BlogListQuery) (*model.BlogListResult, error) {
 	f.listPage = page
 	f.listPageSize = pageSize
@@ -51,6 +55,7 @@ func (f *fakeBlogRepo) List(page, pageSize int, query model.BlogListQuery) (*mod
 	return &model.BlogListResult{}, nil
 }
 
+// AdminList 模拟后台博客列表查询。
 func (f *fakeBlogRepo) AdminList(page, pageSize int, keyword, author, status string) (*model.BlogListResult, error) {
 	f.adminListPage = page
 	f.adminListSize = pageSize
@@ -63,6 +68,7 @@ func (f *fakeBlogRepo) AdminList(page, pageSize int, keyword, author, status str
 	return &model.BlogListResult{}, nil
 }
 
+// ListByAuthor 模拟按作者查询博客列表。
 func (f *fakeBlogRepo) ListByAuthor(page, pageSize int, authorUsername, status string) (*model.BlogListResult, error) {
 	f.adminListPage = page
 	f.adminListSize = pageSize
@@ -74,6 +80,7 @@ func (f *fakeBlogRepo) ListByAuthor(page, pageSize int, authorUsername, status s
 	return &model.BlogListResult{}, nil
 }
 
+// ListFavoritesByUser 模拟查询用户收藏列表。
 func (f *fakeBlogRepo) ListFavoritesByUser(page, pageSize int, username string) (*model.BlogListResult, error) {
 	f.favoritePage = page
 	f.favoriteSize = pageSize
@@ -84,6 +91,7 @@ func (f *fakeBlogRepo) ListFavoritesByUser(page, pageSize int, username string) 
 	return &model.BlogListResult{}, nil
 }
 
+// GetByID 模拟按主键读取博客详情。
 func (f *fakeBlogRepo) GetByID(blogID int64) (*model.Blog, error) {
 	if f.blog == nil {
 		return nil, sql.ErrNoRows
@@ -92,12 +100,14 @@ func (f *fakeBlogRepo) GetByID(blogID int64) (*model.Blog, error) {
 	return &copy, nil
 }
 
+// Create 模拟创建博客。
 func (f *fakeBlogRepo) Create(blog *model.Blog) error {
 	copy := *blog
 	f.createBlog = &copy
 	return nil
 }
 
+// GetAuthorByID 模拟读取博客作者。
 func (f *fakeBlogRepo) GetAuthorByID(blogID int64) (string, error) {
 	if f.author == "" {
 		return "", sql.ErrNoRows
@@ -105,12 +115,14 @@ func (f *fakeBlogRepo) GetAuthorByID(blogID int64) (string, error) {
 	return f.author, nil
 }
 
+// Update 模拟更新博客。
 func (f *fakeBlogRepo) Update(blog *model.Blog) error {
 	copy := *blog
 	f.updateBlog = &copy
 	return nil
 }
 
+// Review 模拟审核博客。
 func (f *fakeBlogRepo) Review(blogID int64, status string, isTop bool) error {
 	f.reviewID = blogID
 	f.reviewStatus = status
@@ -121,24 +133,29 @@ func (f *fakeBlogRepo) Review(blogID int64, status string, isTop bool) error {
 	return nil
 }
 
+// Delete 模拟删除博客。
 func (f *fakeBlogRepo) Delete(blogID int64) error {
 	f.deleteID = blogID
 	return nil
 }
 
+// ListCategories 模拟查询分类列表。
 func (f *fakeBlogRepo) ListCategories() ([]model.Category, error) {
 	return f.categories, nil
 }
 
+// ListCategoriesForManage 模拟查询后台分类列表。
 func (f *fakeBlogRepo) ListCategoriesForManage() ([]model.Category, error) {
 	return f.categories, nil
 }
 
+// CreateCategory 模拟创建分类。
 func (f *fakeBlogRepo) CreateCategory(category *model.Category) error {
 	category.ID = 99
 	return nil
 }
 
+// UpdateCategory 模拟更新分类。
 func (f *fakeBlogRepo) UpdateCategory(category *model.Category) error {
 	if category.ID == 404 {
 		return sql.ErrNoRows
@@ -146,6 +163,7 @@ func (f *fakeBlogRepo) UpdateCategory(category *model.Category) error {
 	return nil
 }
 
+// HideCategory 模拟隐藏分类。
 func (f *fakeBlogRepo) HideCategory(categoryID int64) error {
 	if categoryID == 404 {
 		return sql.ErrNoRows
@@ -153,35 +171,43 @@ func (f *fakeBlogRepo) HideCategory(categoryID int64) error {
 	return nil
 }
 
+// ListTags 模拟查询标签列表。
 func (f *fakeBlogRepo) ListTags() ([]model.Tag, error) {
 	return f.tags, nil
 }
 
+// ListArchives 模拟查询归档列表。
 func (f *fakeBlogRepo) ListArchives() ([]model.ArchiveItem, error) {
 	return f.archives, nil
 }
 
+// IncrementViewCount 模拟增加阅读量。
 func (f *fakeBlogRepo) IncrementViewCount(blogID int64) error {
 	f.incrementViewID = blogID
 	return nil
 }
 
+// HasLiked 模拟判断是否点赞。
 func (f *fakeBlogRepo) HasLiked(blogID int64, username string) (bool, error) {
 	return f.hasLiked, nil
 }
 
+// HasFavorited 模拟判断是否收藏。
 func (f *fakeBlogRepo) HasFavorited(blogID int64, username string) (bool, error) {
 	return f.hasFavorited, nil
 }
 
+// ToggleLike 模拟切换点赞状态。
 func (f *fakeBlogRepo) ToggleLike(blogID int64, username string) (bool, int64, error) {
 	return f.toggleLikeOn, f.toggleLikeCount, nil
 }
 
+// ToggleFavorite 模拟切换收藏状态。
 func (f *fakeBlogRepo) ToggleFavorite(blogID int64, username string) (bool, int64, error) {
 	return f.toggleFavOn, f.toggleFavCount, nil
 }
 
+// TestBlogServiceCreateBlogBuildsSlugSummaryStatusAndTags 验证创建博客时会生成必要字段。
 func TestBlogServiceCreateBlogBuildsSlugSummaryStatusAndTags(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)
@@ -216,6 +242,7 @@ func TestBlogServiceCreateBlogBuildsSlugSummaryStatusAndTags(t *testing.T) {
 	}
 }
 
+// TestBlogServiceUpdateBlogRequiresAuthorOrAdmin 验证更新博客需要作者或管理员权限。
 func TestBlogServiceUpdateBlogRequiresAuthorOrAdmin(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog: &model.Blog{ID: 1, Title: "Old", Content: "Old", AuthorUsername: "alice", Status: "draft"},
@@ -235,6 +262,7 @@ func TestBlogServiceUpdateBlogRequiresAuthorOrAdmin(t *testing.T) {
 	}
 }
 
+// TestBlogServiceUpdateBlogAllowsPublishAndTopForManager 验证管理员可发布并置顶博客。
 func TestBlogServiceUpdateBlogAllowsPublishAndTopForManager(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog: &model.Blog{ID: 2, Title: "Old", Content: "Old", AuthorUsername: "alice", Status: "draft"},
@@ -265,6 +293,7 @@ func TestBlogServiceUpdateBlogAllowsPublishAndTopForManager(t *testing.T) {
 	}
 }
 
+// TestBlogServiceGetBlogByIDForUserBlocksDraftForOthers 验证非作者不能查看草稿。
 func TestBlogServiceGetBlogByIDForUserBlocksDraftForOthers(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog: &model.Blog{ID: 1, AuthorUsername: "alice", Status: "draft"},
@@ -277,6 +306,7 @@ func TestBlogServiceGetBlogByIDForUserBlocksDraftForOthers(t *testing.T) {
 	}
 }
 
+// TestBlogServiceGetBlogByIDForUserLoadsInteractionState 验证详情会附带互动状态。
 func TestBlogServiceGetBlogByIDForUserLoadsInteractionState(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog:         &model.Blog{ID: 8, AuthorUsername: "alice", Status: "published", Stats: model.BlogStats{ViewCount: 4}},
@@ -297,6 +327,7 @@ func TestBlogServiceGetBlogByIDForUserLoadsInteractionState(t *testing.T) {
 	}
 }
 
+// TestBlogServiceDeleteBlogRequiresAuthorOrAdmin 验证删除博客需要作者或管理员权限。
 func TestBlogServiceDeleteBlogRequiresAuthorOrAdmin(t *testing.T) {
 	repo := &fakeBlogRepo{author: "alice"}
 	service := NewBlogService(repo)
@@ -307,6 +338,7 @@ func TestBlogServiceDeleteBlogRequiresAuthorOrAdmin(t *testing.T) {
 	}
 }
 
+// TestBlogServiceListBlogsNormalizesPaginationAndFilters 验证列表查询会规范分页和筛选参数。
 func TestBlogServiceListBlogsNormalizesPaginationAndFilters(t *testing.T) {
 	repo := &fakeBlogRepo{
 		listResult: &model.BlogListResult{Page: 1, PageSize: 50, Total: 120, Keyword: "go"},
@@ -328,6 +360,7 @@ func TestBlogServiceListBlogsNormalizesPaginationAndFilters(t *testing.T) {
 	}
 }
 
+// TestBlogServiceListManagedBlogsRequiresManagerPermission 验证后台博客列表需要管理权限。
 func TestBlogServiceListManagedBlogsRequiresManagerPermission(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)
@@ -338,6 +371,7 @@ func TestBlogServiceListManagedBlogsRequiresManagerPermission(t *testing.T) {
 	}
 }
 
+// TestBlogServiceListCurrentUserBlogsRequiresLogin 验证个人博客列表需要登录。
 func TestBlogServiceListCurrentUserBlogsRequiresLogin(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)
@@ -348,6 +382,7 @@ func TestBlogServiceListCurrentUserBlogsRequiresLogin(t *testing.T) {
 	}
 }
 
+// TestBlogServiceListFavoriteBlogsRequiresLogin 验证收藏列表需要登录。
 func TestBlogServiceListFavoriteBlogsRequiresLogin(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)
@@ -358,6 +393,7 @@ func TestBlogServiceListFavoriteBlogsRequiresLogin(t *testing.T) {
 	}
 }
 
+// TestBlogServiceListFavoriteBlogsCallsRepository 验证收藏列表会调用仓储层。
 func TestBlogServiceListFavoriteBlogsCallsRepository(t *testing.T) {
 	repo := &fakeBlogRepo{
 		favoriteResult: &model.BlogListResult{Page: 1, PageSize: 10, Total: 2},
@@ -376,6 +412,7 @@ func TestBlogServiceListFavoriteBlogsCallsRepository(t *testing.T) {
 	}
 }
 
+// TestBlogServiceReviewBlogValidatesStatus 验证审核状态值会被校验。
 func TestBlogServiceReviewBlogValidatesStatus(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)
@@ -386,6 +423,7 @@ func TestBlogServiceReviewBlogValidatesStatus(t *testing.T) {
 	}
 }
 
+// TestBlogServiceReviewBlogCallsRepository 验证审核博客会调用仓储层。
 func TestBlogServiceReviewBlogCallsRepository(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)
@@ -399,6 +437,7 @@ func TestBlogServiceReviewBlogCallsRepository(t *testing.T) {
 	}
 }
 
+// TestBlogServiceToggleLikeRequiresLogin 验证点赞需要登录。
 func TestBlogServiceToggleLikeRequiresLogin(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog: &model.Blog{ID: 1, AuthorUsername: "alice", Status: "published"},
@@ -411,6 +450,7 @@ func TestBlogServiceToggleLikeRequiresLogin(t *testing.T) {
 	}
 }
 
+// TestBlogServiceToggleFavoriteReturnsCounts 验证收藏操作会返回最新统计值。
 func TestBlogServiceToggleFavoriteReturnsCounts(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog:           &model.Blog{ID: 2, AuthorUsername: "alice", Status: "published", Stats: model.BlogStats{LikeCount: 3}},
@@ -428,6 +468,7 @@ func TestBlogServiceToggleFavoriteReturnsCounts(t *testing.T) {
 	}
 }
 
+// TestBlogServiceCategoryManagementRequiresManager 验证分类管理需要管理权限。
 func TestBlogServiceCategoryManagementRequiresManager(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)
@@ -438,6 +479,7 @@ func TestBlogServiceCategoryManagementRequiresManager(t *testing.T) {
 	}
 }
 
+// TestBlogServiceCreateCategoryBuildsSlug 验证创建分类时会生成 slug。
 func TestBlogServiceCreateCategoryBuildsSlug(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)

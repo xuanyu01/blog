@@ -1,5 +1,5 @@
 /*
-定义权限常量和权限判断函数。
+permission.go 定义权限常量和权限判断函数。
 */
 package model
 

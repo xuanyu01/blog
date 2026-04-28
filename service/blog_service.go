@@ -1,5 +1,5 @@
 /*
-实现博客相关业务逻辑。
+blog_service.go 负责博客、分类、标签、归档和互动相关业务逻辑。
 */
 package service
 
@@ -439,6 +439,7 @@ func (s *BlogService) ToggleFavorite(blogID int64, currentUsername, currentPermi
 	}, nil
 }
 
+// getInteractiveBlog 读取博客并校验当前用户是否可访问。
 func (s *BlogService) getInteractiveBlog(blogID int64, currentUsername, currentPermission string) (*model.Blog, error) {
 	blog, err := s.blogRepo.GetByID(blogID)
 	if err != nil {
@@ -457,6 +458,7 @@ func (s *BlogService) getInteractiveBlog(blogID int64, currentUsername, currentP
 	return blog, nil
 }
 
+// normalizeBlogPagination 规范分页参数范围。
 func normalizeBlogPagination(page, pageSize int) (int, int) {
 	if page < 1 {
 		page = 1
@@ -470,6 +472,7 @@ func normalizeBlogPagination(page, pageSize int) (int, int) {
 	return page, pageSize
 }
 
+// normalizeEditableStatus 规范可编辑博客的状态字段。
 func normalizeEditableStatus(status string) (string, error) {
 	status = strings.TrimSpace(status)
 	if status == "" {
@@ -481,6 +484,7 @@ func normalizeEditableStatus(status string) (string, error) {
 	return status, nil
 }
 
+// validateBlogInput 清洗并校验标题与正文内容。
 func validateBlogInput(title, content string) (string, string, error) {
 	title = strings.TrimSpace(title)
 	content = strings.TrimSpace(content)
@@ -498,11 +502,13 @@ func validateBlogInput(title, content string) (string, string, error) {
 	return title, content, nil
 }
 
+// normalizeTagNames 清洗标签名并生成对应标签结构。
 func normalizeTagNames(raw []string) ([]model.Tag, error) {
 	if len(raw) == 0 {
 		return nil, nil
 	}
 
+	// 用 map 去重，避免同一篇文章重复写入同名标签。
 	seen := map[string]struct{}{}
 	items := make([]model.Tag, 0, len(raw))
 	for _, name := range raw {
@@ -536,6 +542,7 @@ func normalizeTagNames(raw []string) ([]model.Tag, error) {
 	return items, nil
 }
 
+// buildBlogSlug 根据标题生成 URL 友好的别名。
 func buildBlogSlug(title string) string {
 	title = strings.TrimSpace(strings.ToLower(title))
 	var builder strings.Builder
@@ -565,6 +572,7 @@ func buildBlogSlug(title string) string {
 	return fmt.Sprintf("%s-%d", slug, time.Now().UnixNano())
 }
 
+// buildBlogSummary 从正文中提取摘要内容。
 func buildBlogSummary(content string) string {
 	content = buildBlogPlainText(content)
 	runes := []rune(content)
@@ -574,6 +582,7 @@ func buildBlogSummary(content string) string {
 	return string(runes[:180])
 }
 
+// buildBlogPlainText 把 Markdown 正文压缩为纯文本。
 func buildBlogPlainText(content string) string {
 	replacer := strings.NewReplacer(
 		"\r", " ",
@@ -596,6 +605,7 @@ func buildBlogPlainText(content string) string {
 	return strings.Join(strings.Fields(content), " ")
 }
 
+// buildTagSlug 根据标签名生成标签别名。
 func buildTagSlug(name string) string {
 	name = strings.TrimSpace(strings.ToLower(name))
 	re := regexp.MustCompile(`[^a-z0-9]+`)
@@ -614,6 +624,7 @@ func buildTagSlug(name string) string {
 	return strings.TrimSpace(builder.String())
 }
 
+// isValidArchive 校验归档参数是否符合 YYYY-MM 格式。
 func isValidArchive(value string) bool {
 	re := regexp.MustCompile(`^\d{4}-\d{2}$`)
 	if !re.MatchString(value) {

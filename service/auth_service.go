@@ -1,5 +1,5 @@
 /*
-实现认证和用户资料相关业务逻辑。
+auth_service.go 负责认证、用户资料和用户管理相关业务逻辑。
 */
 package service
 

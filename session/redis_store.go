@@ -1,5 +1,5 @@
 /*
-该文件实现基于 Redis 的会话存储
+redis_store.go 提供基于 Redis 的会话存储实现。
 */
 package session
 

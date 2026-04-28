@@ -1,5 +1,5 @@
 /*
-实现评论相关业务逻辑。
+comment_service.go 负责评论相关业务逻辑。
 */
 package service
 
@@ -95,6 +95,7 @@ func (s *CommentService) DeleteComment(commentID int64, currentUsername, current
 	return nil
 }
 
+// getAccessibleBlog 校验当前用户是否有权访问目标博客。
 func (s *CommentService) getAccessibleBlog(postID int64, currentUsername, currentPermission string) (*model.Blog, error) {
 	blog, err := s.blogRepo.GetByID(postID)
 	if err != nil {

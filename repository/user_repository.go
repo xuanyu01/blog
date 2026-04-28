@@ -1,5 +1,5 @@
 /*
-实现用户数据访问逻辑。
+user_repository.go 负责用户数据的查询和写入逻辑。
 */
 package repository
 

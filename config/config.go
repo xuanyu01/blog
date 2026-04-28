@@ -1,5 +1,5 @@
 /*
-从环境变量和 .env 文件加载配置。
+config.go 负责从环境变量和 .env 文件加载运行配置。
 */
 package config
 
@@ -16,10 +16,11 @@ import (
 
 // Config 聚合服务运行所需的配置。
 type Config struct {
-	Server  ServerConfig
-	MySQL   MySQLConfig
-	Redis   RedisConfig
-	Session SessionConfig
+	Server   ServerConfig
+	MySQL    MySQLConfig
+	Redis    RedisConfig
+	Session  SessionConfig
+	Security SecurityConfig
 }
 
 // ServerConfig 定义 HTTP 服务监听地址。
@@ -44,12 +45,26 @@ type SessionConfig struct {
 	Expire time.Duration
 }
 
+// SecurityConfig 定义安全相关配置。
+type SecurityConfig struct {
+	LoginRateLimit LoginRateLimitConfig
+}
+
+// LoginRateLimitConfig 定义登录限流配置。
+type LoginRateLimitConfig struct {
+	MaxAttempts   int
+	Window        time.Duration
+	BlockDuration time.Duration
+}
+
 // New 加载并校验应用配置。
 func New() (Config, error) {
+	// 优先加载环境变量，环境变量不存在时才读取 .env 文件
 	if err := loadDotEnv(".env"); err != nil {
 		return Config{}, err
 	}
 
+	// 从环境变量构建配置对象，并进行必要的类型转换和校验
 	cfg := Config{
 		Server: ServerConfig{
 			Address: strings.TrimSpace(os.Getenv("APP_ADDR")),
@@ -75,6 +90,24 @@ func New() (Config, error) {
 	}
 	cfg.Session.Expire = time.Duration(sessionExpireMinutes) * time.Minute
 
+	loginRateLimitMaxAttempts, err := getEnvInt("LOGIN_RATE_LIMIT_MAX_ATTEMPTS", false, 5)
+	if err != nil {
+		return Config{}, err
+	}
+	loginRateLimitWindowMinutes, err := getEnvInt("LOGIN_RATE_LIMIT_WINDOW_MINUTES", false, 10)
+	if err != nil {
+		return Config{}, err
+	}
+	loginRateLimitBlockMinutes, err := getEnvInt("LOGIN_RATE_LIMIT_BLOCK_MINUTES", false, 15)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.Security.LoginRateLimit = LoginRateLimitConfig{
+		MaxAttempts:   loginRateLimitMaxAttempts,
+		Window:        time.Duration(loginRateLimitWindowMinutes) * time.Minute,
+		BlockDuration: time.Duration(loginRateLimitBlockMinutes) * time.Minute,
+	}
+
 	if err := validate(cfg); err != nil {
 		return Config{}, err
 	}
@@ -96,6 +129,15 @@ func validate(cfg Config) error {
 	}
 	if cfg.Session.Expire <= 0 {
 		return errors.New("SESSION_EXPIRE_MINUTES must be greater than 0")
+	}
+	if cfg.Security.LoginRateLimit.MaxAttempts <= 0 {
+		return errors.New("LOGIN_RATE_LIMIT_MAX_ATTEMPTS must be greater than 0")
+	}
+	if cfg.Security.LoginRateLimit.Window <= 0 {
+		return errors.New("LOGIN_RATE_LIMIT_WINDOW_MINUTES must be greater than 0")
+	}
+	if cfg.Security.LoginRateLimit.BlockDuration <= 0 {
+		return errors.New("LOGIN_RATE_LIMIT_BLOCK_MINUTES must be greater than 0")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config: %s", strings.Join(missing, ", "))

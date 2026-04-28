@@ -1,10 +1,13 @@
 /*
-注册 HTTP 路由并提供前端资源访问。
+router.go 负责注册 HTTP 路由并提供前端静态资源访问。
 */
 package router
 
 import (
 	"blog/http/handler"
+	"blog/http/middleware"
+	"blog/service"
+	"blog/session"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,7 +17,7 @@ import (
 )
 
 // New 创建并配置 Gin 路由。
-func New(webHandler *handler.WebHandler) *gin.Engine {
+func New(webHandler *handler.WebHandler, sessionStore session.Store, authService *service.AuthService) *gin.Engine {
 	r := gin.Default()
 	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
 
@@ -25,37 +28,46 @@ func New(webHandler *handler.WebHandler) *gin.Engine {
 	api.GET("/state", webHandler.GetAppState)
 	api.POST("/register", webHandler.Register)
 	api.POST("/login", webHandler.Login)
-	api.POST("/logout", webHandler.Logout)
-	api.GET("/me", webHandler.CurrentUser)
-	api.PUT("/user/profile", webHandler.UpdateProfile)
-	api.PUT("/user/password", webHandler.UpdatePassword)
-	api.PUT("/user/permission", webHandler.UpdateUserPermission)
-	api.GET("/user/blogs", webHandler.ListCurrentUserBlogs)
-	api.GET("/user/favorites", webHandler.ListFavoriteBlogs)
-	api.GET("/admin/users", webHandler.ListUsers)
-	api.DELETE("/admin/users/:username", webHandler.DeleteUser)
-	api.GET("/admin/blogs", webHandler.ListManagedBlogs)
-	api.GET("/admin/categories", webHandler.ListManageCategories)
-	api.POST("/admin/categories", webHandler.CreateCategory)
-	api.PUT("/admin/categories/:id", webHandler.UpdateCategory)
-	api.DELETE("/admin/categories/:id", webHandler.DeleteCategory)
-	api.PUT("/admin/blogs/:id/review", webHandler.ReviewBlog)
-	api.POST("/user/avatar", webHandler.UploadAvatar)
 	api.GET("/submit", webHandler.SubmitGet)
 	api.POST("/submit", webHandler.SubmitPost)
 	api.GET("/categories", webHandler.ListCategories)
 	api.GET("/tags", webHandler.ListTags)
 	api.GET("/archives", webHandler.ListArchives)
 	api.GET("/blogs", webHandler.ListBlogs)
-	api.POST("/blogs", webHandler.CreateBlog)
 	api.GET("/blogs/:id", webHandler.GetBlogByID)
-	api.POST("/blogs/:id/like", webHandler.ToggleBlogLike)
-	api.POST("/blogs/:id/favorite", webHandler.ToggleBlogFavorite)
 	api.GET("/blogs/:id/comments", webHandler.ListComments)
-	api.POST("/blogs/:id/comments", webHandler.CreateComment)
-	api.PUT("/blogs/:id", webHandler.UpdateBlog)
-	api.DELETE("/blogs/:id", webHandler.DeleteBlog)
-	api.DELETE("/comments/:id", webHandler.DeleteComment)
+
+	authRequired := api.Group("")
+	authRequired.Use(middleware.RequireLogin(sessionStore))
+	authRequired.POST("/logout", webHandler.Logout)
+	authRequired.GET("/me", webHandler.CurrentUser)
+	authRequired.PUT("/user/profile", webHandler.UpdateProfile)
+	authRequired.PUT("/user/password", webHandler.UpdatePassword)
+	authRequired.GET("/user/blogs", webHandler.ListCurrentUserBlogs)
+	authRequired.GET("/user/favorites", webHandler.ListFavoriteBlogs)
+	authRequired.POST("/user/avatar", webHandler.UploadAvatar)
+	authRequired.POST("/blogs", webHandler.CreateBlog)
+	authRequired.POST("/blogs/:id/like", webHandler.ToggleBlogLike)
+	authRequired.POST("/blogs/:id/favorite", webHandler.ToggleBlogFavorite)
+	authRequired.POST("/blogs/:id/comments", webHandler.CreateComment)
+	authRequired.PUT("/blogs/:id", webHandler.UpdateBlog)
+	authRequired.DELETE("/blogs/:id", webHandler.DeleteBlog)
+	authRequired.DELETE("/comments/:id", webHandler.DeleteComment)
+
+	managerRoutes := api.Group("")
+	managerRoutes.Use(middleware.RequireManager(sessionStore, authService))
+	managerRoutes.GET("/admin/users", webHandler.ListUsers)
+	managerRoutes.DELETE("/admin/users/:username", webHandler.DeleteUser)
+	managerRoutes.GET("/admin/blogs", webHandler.ListManagedBlogs)
+	managerRoutes.GET("/admin/categories", webHandler.ListManageCategories)
+	managerRoutes.POST("/admin/categories", webHandler.CreateCategory)
+	managerRoutes.PUT("/admin/categories/:id", webHandler.UpdateCategory)
+	managerRoutes.DELETE("/admin/categories/:id", webHandler.DeleteCategory)
+	managerRoutes.PUT("/admin/blogs/:id/review", webHandler.ReviewBlog)
+
+	adminRoutes := api.Group("")
+	adminRoutes.Use(middleware.RequireAdmin(sessionStore, authService))
+	adminRoutes.PUT("/user/permission", webHandler.UpdateUserPermission)
 
 	distDir := filepath.Join("frontend", "dist")
 	assetsDir := filepath.Join(distDir, "assets")

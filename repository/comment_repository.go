@@ -1,5 +1,5 @@
 /*
-实现评论数据访问逻辑。
+comment_repository.go 负责评论数据的查询和写入逻辑。
 */
 package repository
 

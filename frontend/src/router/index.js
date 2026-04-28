@@ -12,20 +12,21 @@ import CreateBlogView from '../views/CreateBlogView.vue'
 import BlogDetailView from '../views/BlogDetailView.vue'
 import UserDraftsView from '../views/UserDraftsView.vue'
 import UserFavoritesView from '../views/UserFavoritesView.vue'
+import { appStore, refreshCurrentUser } from '../store/appStore'
 
 // routes 描述路径和页面组件的映射关系
 const routes = [
   { path: '/', name: 'home', component: HomeView },
-  { path: '/login', name: 'login', component: LoginView },
-  { path: '/register', name: 'register', component: RegisterView },
-  { path: '/user', name: 'user', component: UserView },
-  { path: '/user/drafts', name: 'user-drafts', component: UserDraftsView },
-  { path: '/user/favorites', name: 'user-favorites', component: UserFavoritesView },
-  { path: '/admin', name: 'admin', component: AdminView },
-  { path: '/user/avatar', name: 'user-avatar', component: AvatarUploadView },
+  { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
+  { path: '/register', name: 'register', component: RegisterView, meta: { guestOnly: true } },
+  { path: '/user', name: 'user', component: UserView, meta: { requiresAuth: true } },
+  { path: '/user/drafts', name: 'user-drafts', component: UserDraftsView, meta: { requiresAuth: true } },
+  { path: '/user/favorites', name: 'user-favorites', component: UserFavoritesView, meta: { requiresAuth: true } },
+  { path: '/admin', name: 'admin', component: AdminView, meta: { requiresManager: true } },
+  { path: '/user/avatar', name: 'user-avatar', component: AvatarUploadView, meta: { requiresAuth: true } },
   { path: '/blog/:id', name: 'blog-detail', component: BlogDetailView },
-  { path: '/blog/create', name: 'blog-create', component: CreateBlogView },
-  { path: '/blog/:id/edit', name: 'blog-edit', component: CreateBlogView }
+  { path: '/blog/create', name: 'blog-create', component: CreateBlogView, meta: { requiresAuth: true } },
+  { path: '/blog/:id/edit', name: 'blog-edit', component: CreateBlogView, meta: { requiresAuth: true } }
 ]
 
 // router 是前端路由实例
@@ -35,6 +36,44 @@ const router = createRouter({
   scrollBehavior() {
     return { top: 0 }
   }
+})
+
+router.beforeEach(async (to) => {
+  const requiresUserState = to.matched.some((record) => (
+    record.meta.requiresAuth ||
+    record.meta.requiresManager ||
+    record.meta.guestOnly
+  ))
+
+  if (requiresUserState) {
+    await refreshCurrentUser()
+  }
+
+  if (to.matched.some((record) => record.meta.guestOnly) && appStore.user.isLogin) {
+    return { name: 'home' }
+  }
+
+  if (to.matched.some((record) => record.meta.requiresAuth) && !appStore.user.isLogin) {
+    return {
+      name: 'login',
+      query: { redirect: to.fullPath }
+    }
+  }
+
+  if (to.matched.some((record) => record.meta.requiresManager)) {
+    const canManage = appStore.user.permission === 'admin' || appStore.user.permission === 'user_admin'
+    if (!appStore.user.isLogin) {
+      return {
+        name: 'login',
+        query: { redirect: to.fullPath }
+      }
+    }
+    if (!canManage) {
+      return { name: 'home' }
+    }
+  }
+
+  return true
 })
 
 export default router

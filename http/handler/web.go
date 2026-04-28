@@ -1,5 +1,5 @@
 /*
-实现前端依赖的 HTTP 处理逻辑。
+web.go 提供前端页面依赖的公共 HTTP 处理逻辑和辅助函数。
 */
 package handler
 
@@ -12,13 +12,12 @@ import (
 	"encoding/hex"
 	"errors"
 	"io"
-	"log"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -35,7 +34,21 @@ type WebHandler struct {
 	blogService    *service.BlogService
 	commentService *service.CommentService
 	authService    *service.AuthService
+	loginLimiter   loginRateLimiter
 }
+
+// loginRateLimiter 定义登录限流器需要提供的能力。
+type loginRateLimiter interface {
+	Check(key string) (time.Duration, error)
+	RegisterFailure(key string) (time.Duration, error)
+	Reset(key string) error
+}
+
+type noopLoginRateLimiter struct{}
+
+func (noopLoginRateLimiter) Check(key string) (time.Duration, error)           { return 0, nil }
+func (noopLoginRateLimiter) RegisterFailure(key string) (time.Duration, error) { return 0, nil }
+func (noopLoginRateLimiter) Reset(key string) error                            { return nil }
 
 // appStateResponse 表示首页状态接口的响应结构。
 type appStateResponse struct {
@@ -62,36 +75,45 @@ type userListResponse struct {
 	Total    int                  `json:"total"`
 }
 
-// blogReviewRequest 表示博客审核请求。
+// taxonomyListResponse 表示分类、标签和归档列表的通用响应结构。
+type taxonomyListResponse[T any] struct {
+	Items []T `json:"items"`
+}
+
+// blogReviewRequest 表示后台审核博客的请求体。
 type blogReviewRequest struct {
 	Status string `json:"status"`
 	IsTop  bool   `json:"isTop"`
 }
 
-// NewWebHandler 创建处理器实例。
-type taxonomyListResponse[T any] struct {
-	Items []T `json:"items"`
-}
-
+// blogInteractionResponse 表示点赞或收藏后的交互结果。
 type blogInteractionResponse struct {
 	Active        bool  `json:"active"`
 	LikeCount     int64 `json:"likeCount"`
 	FavoriteCount int64 `json:"favoriteCount"`
 }
 
+// categoryPayload 表示分类创建或更新的请求体。
 type categoryPayload struct {
 	Name string `json:"name"`
 }
 
+// commentCreateRequest 表示评论创建请求体。
 type commentCreateRequest struct {
 	Content string `json:"content"`
 }
 
-func NewWebHandler(blogService *service.BlogService, commentService *service.CommentService, authService *service.AuthService) *WebHandler {
+// NewWebHandler 创建处理器实例。
+func NewWebHandler(blogService *service.BlogService, commentService *service.CommentService, authService *service.AuthService, loginLimiter loginRateLimiter) *WebHandler {
+	if loginLimiter == nil {
+		loginLimiter = noopLoginRateLimiter{}
+	}
+
 	return &WebHandler{
 		blogService:    blogService,
 		commentService: commentService,
 		authService:    authService,
+		loginLimiter:   loginLimiter,
 	}
 }
 
@@ -100,646 +122,6 @@ func (h *WebHandler) GetAppState(c *gin.Context) {
 	user := h.getCurrentUser(c)
 	c.JSON(http.StatusOK, appStateResponse{
 		User: user,
-	})
-}
-
-// ListBlogs 返回前台博客列表。
-func (h *WebHandler) ListBlogs(c *gin.Context) {
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	categoryID, _ := strconv.ParseInt(c.DefaultQuery("categoryId", "0"), 10, 64)
-	archive := strings.TrimSpace(c.Query("archive"))
-
-	result, err := h.blogService.ListBlogs(page, pageSize, model.BlogListQuery{
-		Keyword:    keyword,
-		CategoryID: categoryID,
-		Archive:    archive,
-	})
-	if err != nil {
-		statusCode := http.StatusInternalServerError
-		if err.Error() == "invalid archive" {
-			statusCode = http.StatusBadRequest
-		}
-		log.Println("list blogs failed:", err)
-		c.JSON(statusCode, gin.H{
-			"message": "failed to load blogs",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, blogListResponse{
-		Items:      result.Items,
-		Page:       result.Page,
-		PageSize:   result.PageSize,
-		Total:      result.Total,
-		Keyword:    result.Keyword,
-		CategoryID: result.CategoryID,
-		Archive:    result.Archive,
-	})
-}
-
-func (h *WebHandler) ListCategories(c *gin.Context) {
-	items, err := h.blogService.ListCategories()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": "failed to load categories",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, taxonomyListResponse[model.Category]{
-		Items: items,
-	})
-}
-
-func (h *WebHandler) ListTags(c *gin.Context) {
-	items, err := h.blogService.ListTags()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": "failed to load tags",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, taxonomyListResponse[model.Tag]{
-		Items: items,
-	})
-}
-
-func (h *WebHandler) ListArchives(c *gin.Context) {
-	items, err := h.blogService.ListArchives()
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"message": "failed to load archives",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, taxonomyListResponse[model.ArchiveItem]{
-		Items: items,
-	})
-}
-
-func (h *WebHandler) ListManageCategories(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
-		return
-	}
-
-	items, err := h.blogService.ListManageCategories(user.Permission)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		if err.Error() == "forbidden" {
-			statusCode = http.StatusForbidden
-		}
-		c.JSON(statusCode, gin.H{"message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, taxonomyListResponse[model.Category]{Items: items})
-}
-
-func (h *WebHandler) CreateCategory(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
-		return
-	}
-
-	var payload categoryPayload
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
-		return
-	}
-
-	category, err := h.blogService.CreateCategory(payload.Name, user.Permission)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		if err.Error() == "forbidden" {
-			statusCode = http.StatusForbidden
-		}
-		c.JSON(statusCode, gin.H{"message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"item": category})
-}
-
-func (h *WebHandler) UpdateCategory(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
-		return
-	}
-
-	categoryID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || categoryID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid category id"})
-		return
-	}
-
-	var payload categoryPayload
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid request body"})
-		return
-	}
-
-	category, err := h.blogService.UpdateCategory(categoryID, payload.Name, user.Permission)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		switch err.Error() {
-		case "forbidden":
-			statusCode = http.StatusForbidden
-		case "category not found":
-			statusCode = http.StatusNotFound
-		}
-		c.JSON(statusCode, gin.H{"message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"item": category})
-}
-
-func (h *WebHandler) DeleteCategory(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{"message": "unauthorized"})
-		return
-	}
-
-	categoryID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || categoryID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{"message": "invalid category id"})
-		return
-	}
-
-	if err := h.blogService.DeleteCategory(categoryID, user.Permission); err != nil {
-		statusCode := http.StatusBadRequest
-		switch err.Error() {
-		case "forbidden":
-			statusCode = http.StatusForbidden
-		case "category not found":
-			statusCode = http.StatusNotFound
-		}
-		c.JSON(statusCode, gin.H{"message": err.Error()})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Category deleted"})
-}
-
-// ListManagedBlogs 返回后台博客列表。
-func (h *WebHandler) ListManagedBlogs(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-	keyword := strings.TrimSpace(c.Query("keyword"))
-	author := strings.TrimSpace(c.Query("author"))
-	status := strings.TrimSpace(c.Query("status"))
-
-	result, err := h.blogService.ListManagedBlogs(page, pageSize, keyword, author, status, user.Permission)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			statusCode = http.StatusUnauthorized
-		case "forbidden":
-			statusCode = http.StatusForbidden
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, blogListResponse{
-		Items:    result.Items,
-		Page:     result.Page,
-		PageSize: result.PageSize,
-		Total:    result.Total,
-		Keyword:  result.Keyword,
-	})
-}
-
-// ListCurrentUserBlogs 返回当前用户自己的博客列表。
-func (h *WebHandler) ListCurrentUserBlogs(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-	status := strings.TrimSpace(c.Query("status"))
-
-	result, err := h.blogService.ListCurrentUserBlogs(page, pageSize, status, user.UserName)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		if err.Error() == "unauthorized" {
-			statusCode = http.StatusUnauthorized
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, blogListResponse{
-		Items:    result.Items,
-		Page:     result.Page,
-		PageSize: result.PageSize,
-		Total:    result.Total,
-		Keyword:  result.Keyword,
-	})
-}
-
-// ListFavoriteBlogs 返回当前用户的收藏列表。
-func (h *WebHandler) ListFavoriteBlogs(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-
-	result, err := h.blogService.ListFavoriteBlogs(page, pageSize, user.UserName)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		if err.Error() == "unauthorized" {
-			statusCode = http.StatusUnauthorized
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, blogListResponse{
-		Items:    result.Items,
-		Page:     result.Page,
-		PageSize: result.PageSize,
-		Total:    result.Total,
-	})
-}
-
-// Register 处理注册请求。
-func (h *WebHandler) Register(c *gin.Context) {
-	username := c.PostForm("username")
-	password := c.PostForm("password")
-
-	if username == "" || password == "" {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "username and password are required",
-		})
-		return
-	}
-
-	if err := h.authService.Register(username, password); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Register success",
-	})
-}
-
-// Login 处理登录请求。
-func (h *WebHandler) Login(c *gin.Context) {
-	username := c.PostForm("username")
-	password := c.PostForm("password")
-
-	sessionID, err := h.authService.Login(username, password)
-	if err != nil {
-		status := http.StatusBadRequest
-		if !errors.Is(err, service.ErrInvalidCredentials) {
-			status = http.StatusInternalServerError
-			log.Println("login failed:", err)
-		}
-
-		c.JSON(status, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.SetCookie(session.CookieName, sessionID, int(session.Expire.Seconds()), "/", "", false, true)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Login success",
-	})
-}
-
-// Logout 处理退出登录请求。
-func (h *WebHandler) Logout(c *gin.Context) {
-	sessionID, _ := c.Cookie(session.CookieName)
-	if err := h.authService.Logout(sessionID); err != nil {
-		log.Println("logout failed:", err)
-	}
-
-	c.SetCookie(session.CookieName, "", -1, "/", "", false, true)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Logout success",
-	})
-}
-
-// CurrentUser 返回当前登录用户信息。
-func (h *WebHandler) CurrentUser(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, user)
-}
-
-// UpdateProfile 处理用户资料修改请求。
-func (h *WebHandler) UpdateProfile(c *gin.Context) {
-	sessionID, err := c.Cookie(session.CookieName)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	var payload model.UserProfileUpdate
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid request body",
-		})
-		return
-	}
-
-	user, err := h.authService.UpdateProfile(sessionID, payload)
-	if err != nil {
-		status := http.StatusBadRequest
-		if err.Error() == "unauthorized" {
-			status = http.StatusUnauthorized
-		}
-		c.JSON(status, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, user)
-}
-
-// UploadAvatar 处理头像上传请求。
-func (h *WebHandler) UploadAvatar(c *gin.Context) {
-	sessionID, err := c.Cookie(session.CookieName)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	fileHeader, err := c.FormFile("avatar")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "avatar file is required",
-		})
-		return
-	}
-
-	fileName, err := saveAvatarFile(fileHeader)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	user, err := h.authService.UpdateAvatar(sessionID, fileName)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, user)
-}
-
-// UpdatePassword 处理密码修改请求。
-func (h *WebHandler) UpdatePassword(c *gin.Context) {
-	sessionID, err := c.Cookie(session.CookieName)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	var payload model.PasswordUpdate
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid request body",
-		})
-		return
-	}
-
-	if err := h.authService.UpdatePassword(sessionID, payload); err != nil {
-		status := http.StatusBadRequest
-		if err.Error() == "unauthorized" {
-			status = http.StatusUnauthorized
-		}
-		c.JSON(status, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Password updated",
-	})
-}
-
-// UpdateUserPermission 处理权限修改请求。
-func (h *WebHandler) UpdateUserPermission(c *gin.Context) {
-	sessionID, err := c.Cookie(session.CookieName)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	var payload model.UserPermissionUpdate
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid request body",
-		})
-		return
-	}
-
-	if err := h.authService.UpdateUserPermission(sessionID, payload); err != nil {
-		status := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			status = http.StatusUnauthorized
-		case "only admin can update user permission":
-			status = http.StatusForbidden
-		case "user not found":
-			status = http.StatusNotFound
-		}
-
-		c.JSON(status, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Permission updated",
-	})
-}
-
-// ListUsers 返回后台用户列表。
-func (h *WebHandler) ListUsers(c *gin.Context) {
-	sessionID, err := c.Cookie(session.CookieName)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
-	pageSize, _ := strconv.Atoi(c.DefaultQuery("pageSize", "10"))
-
-	result, err := h.authService.ListUsers(sessionID, page, pageSize)
-	if err != nil {
-		status := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			status = http.StatusUnauthorized
-		case "forbidden":
-			status = http.StatusForbidden
-		}
-
-		c.JSON(status, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, userListResponse{
-		Items:    result.Items,
-		Page:     result.Page,
-		PageSize: result.PageSize,
-		Total:    result.Total,
-	})
-}
-
-// DeleteUser 处理用户删除请求。
-func (h *WebHandler) DeleteUser(c *gin.Context) {
-	sessionID, err := c.Cookie(session.CookieName)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	if err := h.authService.DeleteUser(sessionID, c.Param("username")); err != nil {
-		status := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			status = http.StatusUnauthorized
-		case "forbidden":
-			status = http.StatusForbidden
-		case "user not found":
-			status = http.StatusNotFound
-		case "cannot delete admin user":
-			status = http.StatusForbidden
-		case "user_admin can only delete user":
-			status = http.StatusForbidden
-		case "cannot delete current user":
-			status = http.StatusBadRequest
-		}
-
-		c.JSON(status, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "User deleted",
-	})
-}
-
-// ReviewBlog 处理博客审核请求。
-func (h *WebHandler) ReviewBlog(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || blogID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid blog id",
-		})
-		return
-	}
-
-	var payload blogReviewRequest
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid request body",
-		})
-		return
-	}
-
-	if err := h.blogService.ReviewBlog(blogID, payload.Status, payload.IsTop, user.Permission); err != nil {
-		statusCode := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			statusCode = http.StatusUnauthorized
-		case "forbidden":
-			statusCode = http.StatusForbidden
-		case "blog not found":
-			statusCode = http.StatusNotFound
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Blog reviewed",
 	})
 }
 
@@ -772,7 +154,7 @@ func (h *WebHandler) getCurrentUser(c *gin.Context) model.UserView {
 	return user
 }
 
-// saveAvatarFile 校验并保存头像文件。
+// splitTagInput 按中英文分隔符拆分标签输入。
 func splitTagInput(raw string) []string {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -795,7 +177,9 @@ func splitTagInput(raw string) []string {
 	return result
 }
 
+// saveAvatarFile 校验头像文件并保存到本地目录。
 func saveAvatarFile(fileHeader *multipart.FileHeader) (string, error) {
+	// 先校验扩展名和文件头，再落盘保存文件。
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	allowedContentType, ok := allowedAvatarTypes[ext]
 	if !ok {
@@ -847,7 +231,7 @@ func saveAvatarFile(fileHeader *multipart.FileHeader) (string, error) {
 	return fileName, nil
 }
 
-// generateAvatarFileName 生成头像文件名。
+// generateAvatarFileName 生成随机且稳定长度的头像文件名。
 func generateAvatarFileName(ext string) (string, error) {
 	randomBytes := make([]byte, 32)
 	if _, err := rand.Read(randomBytes); err != nil {
@@ -856,369 +240,4 @@ func generateAvatarFileName(ext string) (string, error) {
 
 	hash := sha256.Sum256(randomBytes)
 	return hex.EncodeToString(hash[:]) + ext, nil
-}
-
-// GetBlogByID 返回博客详情。
-func (h *WebHandler) GetBlogByID(c *gin.Context) {
-	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || blogID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid blog id",
-		})
-		return
-	}
-
-	user := h.getCurrentUser(c)
-	blog, err := h.blogService.GetBlogByIDForUser(blogID, user.UserName, user.Permission)
-	if err != nil {
-		status := http.StatusInternalServerError
-		switch err.Error() {
-		case "blog not found":
-			status = http.StatusNotFound
-		case "forbidden":
-			status = http.StatusForbidden
-		}
-
-		c.JSON(status, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, blog)
-}
-
-// CreateBlog 处理博客创建请求。
-func (h *WebHandler) ToggleBlogLike(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || blogID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid blog id",
-		})
-		return
-	}
-
-	result, err := h.blogService.ToggleLike(blogID, user.UserName, user.Permission)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			statusCode = http.StatusUnauthorized
-		case "blog not found":
-			statusCode = http.StatusNotFound
-		case "forbidden":
-			statusCode = http.StatusForbidden
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, blogInteractionResponse{
-		Active:        result.Active,
-		LikeCount:     result.LikeCount,
-		FavoriteCount: result.FavoriteCount,
-	})
-}
-
-func (h *WebHandler) ToggleBlogFavorite(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || blogID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid blog id",
-		})
-		return
-	}
-
-	result, err := h.blogService.ToggleFavorite(blogID, user.UserName, user.Permission)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			statusCode = http.StatusUnauthorized
-		case "blog not found":
-			statusCode = http.StatusNotFound
-		case "forbidden":
-			statusCode = http.StatusForbidden
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, blogInteractionResponse{
-		Active:        result.Active,
-		LikeCount:     result.LikeCount,
-		FavoriteCount: result.FavoriteCount,
-	})
-}
-
-func (h *WebHandler) CreateBlog(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	title := c.PostForm("title")
-	content := c.PostForm("content")
-	status := c.PostForm("status")
-	isTop, _ := strconv.ParseBool(c.DefaultPostForm("isTop", "false"))
-	categoryID, _ := strconv.ParseInt(c.DefaultPostForm("categoryId", "0"), 10, 64)
-	tags := splitTagInput(c.PostForm("tags"))
-
-	blog, err := h.blogService.CreateBlog(model.BlogCreateInput{
-		Title:          title,
-		Content:        content,
-		Status:         status,
-		IsTop:          isTop,
-		CategoryID:     categoryID,
-		Tags:           tags,
-		AuthorUsername: user.UserName,
-		Permission:     user.Permission,
-	})
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		if err.Error() == "unauthorized" {
-			statusCode = http.StatusUnauthorized
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Blog created",
-		"id":      blog.ID,
-		"status":  blog.Status,
-	})
-}
-
-// UpdateBlog 处理博客编辑请求。
-func (h *WebHandler) UpdateBlog(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || blogID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid blog id",
-		})
-		return
-	}
-
-	title := c.PostForm("title")
-	content := c.PostForm("content")
-	status := c.PostForm("status")
-	isTop, _ := strconv.ParseBool(c.DefaultPostForm("isTop", "false"))
-	categoryID, _ := strconv.ParseInt(c.DefaultPostForm("categoryId", "0"), 10, 64)
-	tags := splitTagInput(c.PostForm("tags"))
-
-	if err := h.blogService.UpdateBlog(model.BlogUpdateInput{
-		BlogID:      blogID,
-		Title:       title,
-		Content:     content,
-		Status:      status,
-		IsTop:       isTop,
-		CategoryID:  categoryID,
-		Tags:        tags,
-		CurrentUser: user.UserName,
-		CurrentPerm: user.Permission,
-	}); err != nil {
-		statusCode := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			statusCode = http.StatusUnauthorized
-		case "only the author can edit this blog":
-			statusCode = http.StatusForbidden
-		case "blog not found":
-			statusCode = http.StatusNotFound
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Blog updated",
-	})
-}
-
-// DeleteBlog 处理博客删除请求。
-func (h *WebHandler) DeleteBlog(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || blogID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid blog id",
-		})
-		return
-	}
-
-	if err := h.blogService.DeleteBlog(blogID, user.UserName, user.Permission); err != nil {
-		status := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			status = http.StatusUnauthorized
-		case "only the author can delete this blog":
-			status = http.StatusForbidden
-		case "blog not found":
-			status = http.StatusNotFound
-		}
-
-		c.JSON(status, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Blog deleted",
-	})
-}
-
-// ListComments 返回博客评论列表。
-func (h *WebHandler) ListComments(c *gin.Context) {
-	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || blogID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid blog id",
-		})
-		return
-	}
-
-	user := h.getCurrentUser(c)
-	comments, err := h.commentService.ListComments(blogID, user.UserName, user.Permission)
-	if err != nil {
-		statusCode := http.StatusInternalServerError
-		switch err.Error() {
-		case "blog not found":
-			statusCode = http.StatusNotFound
-		case "forbidden":
-			statusCode = http.StatusForbidden
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"items": comments,
-	})
-}
-
-// CreateComment 创建博客评论。
-func (h *WebHandler) CreateComment(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || blogID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid blog id",
-		})
-		return
-	}
-
-	var payload commentCreateRequest
-	if err := c.ShouldBindJSON(&payload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid request body",
-		})
-		return
-	}
-
-	comment, err := h.commentService.CreateComment(blogID, payload.Content, user.UserName, user.Permission)
-	if err != nil {
-		statusCode := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			statusCode = http.StatusUnauthorized
-		case "blog not found":
-			statusCode = http.StatusNotFound
-		case "forbidden":
-			statusCode = http.StatusForbidden
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Comment created",
-		"item":    comment,
-	})
-}
-
-// DeleteComment 删除评论。
-func (h *WebHandler) DeleteComment(c *gin.Context) {
-	user := h.getCurrentUser(c)
-	if !user.IsLogin {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"message": "unauthorized",
-		})
-		return
-	}
-
-	commentID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-	if err != nil || commentID <= 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"message": "invalid comment id",
-		})
-		return
-	}
-
-	if err := h.commentService.DeleteComment(commentID, user.UserName, user.Permission); err != nil {
-		statusCode := http.StatusBadRequest
-		switch err.Error() {
-		case "unauthorized":
-			statusCode = http.StatusUnauthorized
-		case "forbidden":
-			statusCode = http.StatusForbidden
-		case "comment not found":
-			statusCode = http.StatusNotFound
-		}
-
-		c.JSON(statusCode, gin.H{
-			"message": err.Error(),
-		})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Comment deleted",
-	})
 }

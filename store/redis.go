@@ -1,5 +1,5 @@
 /*
-这个文件负责初始化 Redis 客户端连接
+redis.go 负责初始化 Redis 客户端连接。
 */
 package store
 

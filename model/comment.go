@@ -1,5 +1,5 @@
 /*
-定义评论相关模型。
+comment.go 定义评论相关模型。
 */
 package model
 

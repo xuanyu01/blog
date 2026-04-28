@@ -60,11 +60,12 @@
 	该页面负责收集登录信息并发起登录请求
 */
 import { onMounted, reactive, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { login } from '../api/client'
 import { refreshAppState, refreshCurrentUser } from '../store/appStore'
 
 const router = useRouter()
+const route = useRoute()
 const loading = ref(false)
 const message = ref('')
 const success = ref(false)
@@ -88,7 +89,7 @@ onMounted(async () => {
   message.value = '你已登录 3 秒后自动返回首页'
 
   setTimeout(() => {
-    router.push('/')
+    router.push(resolveRedirectPath())
   }, 3000)
 })
 
@@ -105,7 +106,7 @@ async function handleSubmit() {
 
     // 先显示成功提示 再跳转回首页 让反馈更自然
     setTimeout(() => {
-      router.push('/')
+      router.push(resolveRedirectPath())
     }, 3000)
   } catch (error) {
     success.value = false
@@ -113,5 +114,10 @@ async function handleSubmit() {
   } finally {
     loading.value = false
   }
+}
+
+function resolveRedirectPath() {
+  const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : ''
+  return redirect || '/'
 }
 </script>
