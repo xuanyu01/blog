@@ -1,9 +1,11 @@
 ﻿/*
-	杩欎釜鏂囦欢瀹氫箟鏁翠釜鍓嶇鐨勫叏灞€鏍峰紡銆?	This file defines the global styles for the entire frontend.
+	这个文件定义整个前端的全局样式。
+	This file defines the global styles for the entire frontend.
 */
 
 /*
-鏍囪锛氳繖閲岄泦涓畾涔夎璁″彉閲忥紝鍚庣画璋冩暣涓婚棰滆壊銆佽竟妗嗗拰闃村奖鏃跺彧闇€瑕佷慨鏀硅繖涓€澶勩€?NOTE: design variables are centralized here so future theme color, border, and shadow changes only need to be made in one place.
+注意：这里集中定义设计变量，后续调整主题颜色、边框和阴影时只需要修改这一处。
+NOTE: design variables are centralized here so future theme color, border, and shadow changes only need to be made in one place.
 */
 :root {
   --bg: #f5efe7;

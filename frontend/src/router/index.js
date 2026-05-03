@@ -1,27 +1,38 @@
 /*
-	这个文件定义前端页面路由
+	这个文件定义前端页面路由。
 */
 import { createRouter, createWebHistory } from 'vue-router'
 import HomeView from '../views/HomeView.vue'
 import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import UserView from '../views/UserView.vue'
+import UserProfileView from '../views/UserProfileView.vue'
 import AdminView from '../views/AdminView.vue'
 import AvatarUploadView from '../views/AvatarUploadView.vue'
 import CreateBlogView from '../views/CreateBlogView.vue'
 import BlogDetailView from '../views/BlogDetailView.vue'
-import UserDraftsView from '../views/UserDraftsView.vue'
-import UserFavoritesView from '../views/UserFavoritesView.vue'
 import { appStore, refreshCurrentUser } from '../store/appStore'
 
+function redirectToCurrentUser() {
+  if (!appStore.user.isLogin) {
+    return { name: 'login' }
+  }
+
+  return {
+    name: 'user-profile',
+    params: { id: String(appStore.user.id) }
+  }
+}
 // routes 描述路径和页面组件的映射关系
 const routes = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
   { path: '/register', name: 'register', component: RegisterView, meta: { guestOnly: true } },
-  { path: '/user', name: 'user', component: UserView, meta: { requiresAuth: true } },
-  { path: '/user/drafts', name: 'user-drafts', component: UserDraftsView, meta: { requiresAuth: true } },
-  { path: '/user/favorites', name: 'user-favorites', component: UserFavoritesView, meta: { requiresAuth: true } },
+  { path: '/user', name: 'user-root', beforeEnter: redirectToCurrentUser, meta: { requiresAuth: true } },
+  { path: '/user/drafts', name: 'user-drafts', beforeEnter: redirectToCurrentUser, meta: { requiresAuth: true } },
+  { path: '/user/favorites', name: 'user-favorites', beforeEnter: redirectToCurrentUser, meta: { requiresAuth: true } },
+  { path: '/user/:id(\\d+)/edit', name: 'user-edit', component: UserView, meta: { requiresAuth: true } },
+  { path: '/user/:id(\\d+)', name: 'user-profile', component: UserProfileView, meta: { requiresAuth: true } },
   { path: '/admin', name: 'admin', component: AdminView, meta: { requiresManager: true } },
   { path: '/user/avatar', name: 'user-avatar', component: AvatarUploadView, meta: { requiresAuth: true } },
   { path: '/blog/:id', name: 'blog-detail', component: BlogDetailView },
@@ -77,3 +88,4 @@ router.beforeEach(async (to) => {
 })
 
 export default router
+

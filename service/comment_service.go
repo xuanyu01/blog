@@ -1,6 +1,5 @@
-/*
-comment_service.go 负责评论相关业务逻辑。
-*/
+﻿/*
+comment_service.go 负责评论相关业务逻辑。*/
 package service
 
 import (
@@ -65,7 +64,7 @@ func (s *CommentService) CreateComment(postID int64, content, currentUsername, c
 	return s.commentRepo.Create(postID, currentUsername, content)
 }
 
-// DeleteComment 删除自己评论，管理员可删除任意评论。
+// DeleteComment ɾ。。。Լ。。。。ۣ。。。。。Ա。。ɾ。。。。。。。。。ۡ。
 func (s *CommentService) DeleteComment(commentID int64, currentUsername, currentPermission string) error {
 	currentUsername = strings.TrimSpace(currentUsername)
 	currentPermission = strings.TrimSpace(currentPermission)
@@ -113,3 +112,4 @@ func (s *CommentService) getAccessibleBlog(postID int64, currentUsername, curren
 
 	return blog, nil
 }
+

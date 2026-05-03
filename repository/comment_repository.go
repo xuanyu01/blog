@@ -1,4 +1,4 @@
-/*
+﻿/*
 comment_repository.go 负责评论数据的查询和写入逻辑。
 */
 package repository
@@ -182,3 +182,4 @@ func (r *CommentRepository) Delete(commentID int64) error {
 
 	return tx.Commit().Error
 }
+

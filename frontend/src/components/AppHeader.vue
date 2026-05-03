@@ -1,6 +1,6 @@
-<!--
+﻿<!--
 /*
-  这个文件定义顶部导航组件
+  这个文件定义顶部导航组件。
 */
 -->
 <template>
@@ -12,22 +12,16 @@
           <RouterLink to="/blog/create" class="link_href">创作</RouterLink>
         </li>
         <li v-if="store.user.isLogin" class="link">
-          <RouterLink to="/user/favorites" class="link_href">我的收藏</RouterLink>
+          <RouterLink :to="userProfilePath" class="link_href">我的主页</RouterLink>
         </li>
       </ul>
     </div>
 
     <div class="user-area">
       <template v-if="store.user.isLogin">
-        <RouterLink
-          v-if="canOpenAdmin"
-          to="/admin"
-          class="admin-entry"
-        >
-          管理员界面
-        </RouterLink>
+        <RouterLink v-if="canOpenAdmin" to="/admin" class="admin-entry">后台管理</RouterLink>
 
-        <RouterLink to="/user" class="avatar-link">
+        <RouterLink :to="userProfilePath" class="avatar-link">
           <img
             v-if="store.user.imageRoute"
             :src="`/img/${store.user.imageRoute}`"
@@ -49,32 +43,23 @@
 
 <script setup>
 /*
-  这个组件负责展示站点导航和登录状态入口
+  这个组件负责展示站点导航和登录状态入口。
 */
 import { computed, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { appStore as store, logoutAndClear, refreshCurrentUser } from '../store/appStore'
 
 const router = useRouter()
-
-// displayNameForView 用显示名称优先展示
 const displayNameForView = computed(() => store.user.displayName || store.user.userName || 'U')
-
-// initials 根据显示名称生成默认头像字母
 const initials = computed(() => displayNameForView.value.slice(0, 1).toUpperCase())
+const userProfilePath = computed(() => `/user/${store.user.id || ''}`)
+const canOpenAdmin = computed(() => store.user.permission === 'admin' || store.user.permission === 'user_admin')
 
-// canOpenAdmin 控制管理员界面的入口显示
-const canOpenAdmin = computed(() => {
-  return store.user.permission === 'admin' || store.user.permission === 'user_admin'
-})
-
-// handleLogout 处理退出登录动作
 async function handleLogout() {
   await logoutAndClear()
   router.push('/')
 }
 
-// 组件挂载时尝试同步登录态
 onMounted(() => {
   if (!store.user.isLogin) {
     refreshCurrentUser()

@@ -1,4 +1,4 @@
-/*
+﻿/*
 blog_query_repository.go 负责博客、分类、标签、归档和收藏列表的查询逻辑。
 */
 package repository
@@ -399,7 +399,85 @@ func (r *BlogRepository) ListFavoritesByUser(page, pageSize int, username string
 	}, nil
 }
 
-// GetByID 按文章 ID 读取博客详情。
+// ListLikesByUser 返回指定用户点赞过的博客列表。
+func (r *BlogRepository) ListLikesByUser(page, pageSize int, username string) (*model.BlogListResult, error) {
+	username = strings.TrimSpace(username)
+	offset := (page - 1) * pageSize
+
+	countQuery := `
+		SELECT COUNT(*)
+		FROM post_likes pl
+		INNER JOIN users liked_u ON liked_u.id = pl.user_id
+		INNER JOIN posts p ON p.id = pl.post_id
+		WHERE liked_u.username = ? AND liked_u.deleted_at IS NULL
+			AND p.deleted_at IS NULL AND p.status = 'published'
+	`
+	listQuery := `
+		SELECT
+			p.id,
+			p.author_id,
+			COALESCE(p.category_id, 0),
+			COALESCE(c.name, ''),
+			COALESCE(c.slug, ''),
+			p.title,
+			COALESCE(p.slug, ''),
+			COALESCE(p.summary, ''),
+			COALESCE(pc.content_markdown, ''),
+			COALESCE(u.username, ''),
+			p.status,
+			p.is_top,
+			p.created_at,
+			p.updated_at,
+			p.published_at,
+			COALESCE(ps.view_count, 0),
+			COALESCE(ps.like_count, 0),
+			COALESCE(ps.favorite_count, 0),
+			COALESCE(ps.comment_count, 0),
+			COALESCE(GROUP_CONCAT(DISTINCT CONCAT(t.id, '::', t.name, '::', t.slug) ORDER BY t.name SEPARATOR '||'), '')
+		FROM post_likes pl
+		INNER JOIN users liked_u ON liked_u.id = pl.user_id
+		INNER JOIN posts p ON p.id = pl.post_id
+		LEFT JOIN users u ON u.id = p.author_id
+		LEFT JOIN categories c ON c.id = p.category_id
+		LEFT JOIN post_contents pc ON pc.post_id = p.id
+		LEFT JOIN post_stats ps ON ps.post_id = p.id
+		LEFT JOIN post_tags pt ON pt.post_id = p.id
+		LEFT JOIN tags t ON t.id = pt.tag_id
+		WHERE liked_u.username = ? AND liked_u.deleted_at IS NULL
+			AND p.deleted_at IS NULL AND p.status = 'published'
+		GROUP BY
+			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
+			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count, pl.created_at
+		ORDER BY pl.created_at DESC, p.id DESC
+		LIMIT ? OFFSET ?
+	`
+
+	var total int
+	if err := r.db.Raw(countQuery, username).Row().Scan(&total); err != nil {
+		return nil, err
+	}
+
+	rows, err := r.db.Raw(listQuery, username, pageSize, offset).Rows()
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	items, err := scanBlogRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	return &model.BlogListResult{
+		Items:    items,
+		Page:     page,
+		PageSize: pageSize,
+		Total:    total,
+	}, nil
+}
+
+// GetByID 按文。ID 读取博客详情。
 func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
 	rows, err := r.db.Raw(`
 		SELECT
@@ -451,7 +529,7 @@ func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
 	return &blogs[0], nil
 }
 
-// GetAuthorByID 按文章 ID 读取作者用户名。
+// GetAuthorByID 按文。ID 读取作者用户名。
 func (r *BlogRepository) GetAuthorByID(blogID int64) (string, error) {
 	var authorUsername string
 	err := r.db.Raw(`

@@ -1,6 +1,5 @@
-/*
-redis_store.go 提供基于 Redis 的会话存储实现。
-*/
+﻿/*
+redis_store.go 提供基于 Redis 的会话存储实现。*/
 package session
 
 import (
@@ -25,13 +24,13 @@ func NewRedisStore(client *redis.Client) *RedisStore {
 	}
 }
 
-// Create 创建新的会话并返回会话标识
+// Create 创建新的会话并返回会话标。
 func (s *RedisStore) Create(userID string) (string, error) {
 	sessionID := uuid.New().String()
 	key := SessionPrefix + sessionID
 
-	// 统一添加前缀，便于后续排查和区分不同类型的 Redis 键
-	if err := s.client.Set(s.ctx, key, userID, Expire).Err(); err != nil {
+	// 统一添加前缀，便于后续排查和区分不同类型。Redis 。
+if err := s.client.Set(s.ctx, key, userID, Expire).Err(); err != nil {
 		return "", err
 	}
 
@@ -52,3 +51,4 @@ func (s *RedisStore) Update(sessionID, userID string) error {
 func (s *RedisStore) Delete(sessionID string) error {
 	return s.client.Del(s.ctx, SessionPrefix+sessionID).Err()
 }
+

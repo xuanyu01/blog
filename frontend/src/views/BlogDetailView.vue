@@ -1,4 +1,4 @@
-<template>
+﻿<template>
   <section class="page-block blog-detail-page">
     <div v-if="loading" class="empty-state">
       <h3>正在加载博客详情</h3>
@@ -7,39 +7,28 @@
 
     <div v-else-if="blog" class="detail-shell">
       <RouterLink to="/" class="back-link">返回首页</RouterLink>
-
       <article class="detail-card">
         <div class="detail-meta-row">
           <div class="detail-meta-group">
             <div v-if="createdAtText" class="detail-meta">{{ createdAtText }}</div>
             <div class="detail-author">作者：{{ blog.authorUsername || 'unknown' }}</div>
             <div class="detail-status-row">
-              <span class="status-badge" :class="`status-${blog.status}`">{{ statusText }}</span>
+              <span class="status-badge" :class="'status-' + blog.status">{{ statusText }}</span>
               <span v-if="blog.categoryName" class="category-badge">{{ blog.categoryName }}</span>
               <span v-if="blog.isTop" class="top-badge">置顶</span>
             </div>
           </div>
-
           <div v-if="canEdit || canDelete" class="detail-actions">
             <button v-if="canEdit" type="button" class="edit-btn" @click="handleEdit">编辑博客</button>
-            <button
-              v-if="canDelete"
-              type="button"
-              class="delete-btn"
-              :disabled="deleting"
-              @click="handleDelete"
-            >
+            <button v-if="canDelete" type="button" class="delete-btn" :disabled="deleting" @click="handleDelete">
               {{ deleting ? '删除中...' : '删除博客' }}
             </button>
           </div>
         </div>
-
         <div v-if="blog.tags.length" class="tag-row">
           <span v-for="item in blog.tags" :key="item.slug || item.name" class="tag-chip"># {{ item.name }}</span>
         </div>
-
         <h1 class="detail-title">{{ blog.title }}</h1>
-
         <div class="interaction-row">
           <div class="stats-row">
             <span>阅读 {{ blog.stats.viewCount }}</span>
@@ -47,105 +36,44 @@
             <span>收藏 {{ blog.stats.favoriteCount }}</span>
             <span>评论 {{ blog.stats.commentCount }}</span>
           </div>
-
           <div class="interaction-actions">
-            <button
-              type="button"
-              class="action-btn"
-              :class="{ active: blog.liked }"
-              :disabled="togglingLike"
-              @click="handleToggleLike"
-            >
+            <button type="button" class="action-btn" :class="{ active: blog.liked }" :disabled="togglingLike" @click="handleToggleLike">
               {{ togglingLike ? '处理中...' : (blog.liked ? '取消点赞' : '点赞') }}
             </button>
-            <button
-              type="button"
-              class="action-btn"
-              :class="{ active: blog.favorited }"
-              :disabled="togglingFavorite"
-              @click="handleToggleFavorite"
-            >
+            <button type="button" class="action-btn" :class="{ active: blog.favorited }" :disabled="togglingFavorite" @click="handleToggleFavorite">
               {{ togglingFavorite ? '处理中...' : (blog.favorited ? '取消收藏' : '收藏') }}
             </button>
           </div>
         </div>
-
         <div class="detail-content markdown-body" v-html="renderedContent"></div>
-
-        <p v-if="message" :class="success ? 'feedback success' : 'feedback error'">
-          {{ message }}
-        </p>
+        <p v-if="message" :class="success ? 'feedback success' : 'feedback error'">{{ message }}</p>
       </article>
-
       <section class="comment-card">
-        <div class="comment-header">
-          <div>
-            <h2>评论</h2>
-            <p>{{ comments.length }} 条评论</p>
-          </div>
-        </div>
-
+        <div class="comment-header"><div><h2>评论</h2><p>{{ comments.length }} 条评论</p></div></div>
         <div class="comment-editor">
-          <textarea
-            v-model="commentContent"
-            class="comment-textarea"
-            rows="4"
-            maxlength="500"
-            :disabled="submittingComment || !store.user.isLogin"
-            placeholder="写下你的想法，最多 500 字"
-          />
-
+          <textarea v-model="commentContent" class="comment-textarea" rows="4" maxlength="500" :disabled="submittingComment || !store.user.isLogin" placeholder="写下你的想法，最多 500 字" />
           <div class="comment-editor-footer">
-            <span class="comment-tip">
-              {{ store.user.isLogin ? `还可以输入 ${commentRemaining} 字` : '登录后可发表评论' }}
-            </span>
-            <button
-              type="button"
-              class="comment-submit-btn"
-              :disabled="!canSubmitComment"
-              @click="handleCreateComment"
-            >
-              {{ submittingComment ? '发布中...' : '发表评论' }}
-            </button>
+            <span class="comment-tip">{{ store.user.isLogin ? '还可以输入 ' + commentRemaining + ' 字' : '登录后可发表评论' }}</span>
+            <button type="button" class="comment-submit-btn" :disabled="!canSubmitComment" @click="handleCreateComment">{{ submittingComment ? '发布中...' : '发表评论' }}</button>
           </div>
-
-          <p v-if="commentMessage" :class="commentSuccess ? 'feedback success' : 'feedback error'">
-            {{ commentMessage }}
-          </p>
+          <p v-if="commentMessage" :class="commentSuccess ? 'feedback success' : 'feedback error'">{{ commentMessage }}</p>
         </div>
-
         <div v-if="commentsLoading" class="comment-empty">正在加载评论...</div>
         <div v-else-if="comments.length === 0" class="comment-empty">还没有评论，来发表第一条吧。</div>
-
         <div v-else class="comment-list">
           <article v-for="item in comments" :key="item.id" class="comment-item">
             <div class="comment-item-head">
-              <div>
-                <strong class="comment-name">{{ item.displayName || item.username }}</strong>
-                <span v-if="item.username" class="comment-username">@{{ item.username }}</span>
-              </div>
-              <button
-                v-if="canDeleteComment(item)"
-                type="button"
-                class="comment-delete-btn"
-                :disabled="deletingCommentId === item.id"
-                @click="handleDeleteComment(item)"
-              >
-                {{ deletingCommentId === item.id ? '删除中...' : '删除' }}
-              </button>
+              <div><strong class="comment-name">{{ item.displayName || item.username }}</strong><span v-if="item.username" class="comment-username">@{{ item.username }}</span></div>
+              <button v-if="canDeleteComment(item)" type="button" class="comment-delete-btn" :disabled="deletingCommentId === item.id" @click="handleDeleteComment(item)">{{ deletingCommentId === item.id ? '删除中...' : '删除' }}</button>
             </div>
-
             <div class="comment-time">{{ formatCommentTime(item.createdAt) }}</div>
             <p class="comment-content">{{ item.content }}</p>
           </article>
         </div>
       </section>
     </div>
-
     <div v-else class="empty-state">
-      <h3>{{ errorTitle }}</h3>
-      <p>{{ errorDescription }}</p>
-      <RouterLink to="/" class="back-link">返回首页</RouterLink>
+      <h3>{{ errorTitle }}</h3><p>{{ errorDescription }}</p><RouterLink to="/" class="back-link">返回首页</RouterLink>
     </div>
   </section>
 </template>

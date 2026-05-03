@@ -1,6 +1,5 @@
-/*
-app.go 负责装配配置、存储、仓储、服务和路由等应用依赖。
-*/
+﻿/*
+app.go 负责装配配置、存储、仓储、服务和路由等应用依赖。*/
 package app
 
 import (
@@ -17,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-// App 保存应用运行所需的核心依赖
+// App 保存应用运行所需的核心依。
 type App struct {
 	server *gin.Engine
 	db     *gorm.DB
@@ -25,7 +24,7 @@ type App struct {
 	addr   string
 }
 
-// New 创建并装配一个可运行的应用实例
+// New 创建并装配一个可运行的应用实。
 func New() (*App, error) {
 	// cfg 加载配置
 	cfg, err := config.New()
@@ -62,15 +61,15 @@ func New() (*App, error) {
 	commentService := service.NewCommentService(commentRepo, blogRepo)
 	authService := service.NewAuthService(userRepo, sessionStore)
 
-	// 创建登录尝试限制器
-	loginLimiter := session.NewLoginAttemptLimiter(
+	// 创建登录尝试限制。
+loginLimiter := session.NewLoginAttemptLimiter(
 		redisClient,
 		cfg.Security.LoginRateLimit.MaxAttempts,
 		cfg.Security.LoginRateLimit.Window,
 		cfg.Security.LoginRateLimit.BlockDuration,
 	)
 
-	// 创建 HTTP 处理器和路由
+	// 。。。。 HTTP 。。。。。。。。·。。
 	webHandler := handler.NewWebHandler(blogService, commentService, authService, loginLimiter)
 	server := router.New(webHandler, sessionStore, authService)
 
@@ -93,3 +92,4 @@ func (a *App) Run() error {
 	defer a.redis.Close()
 	return a.server.Run(a.addr)
 }
+

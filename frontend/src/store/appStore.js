@@ -29,6 +29,7 @@ export const appStore = reactive({
     archives: []
   },
   user: {
+    id: 0,
     userName: '',
     displayName: '',
     imageRoute: '',
@@ -40,6 +41,7 @@ export const appStore = reactive({
 
 function emptyUser() {
   return {
+    id: 0,
     userName: '',
     displayName: '',
     imageRoute: '',
@@ -50,6 +52,7 @@ function emptyUser() {
 
 function normalizeUser(user = {}) {
   return {
+    id: Number(user.id || user.ID || 0),
     userName: user.userName || user.UserName || '',
     displayName: user.displayName || user.DisplayName || '',
     imageRoute: user.imageRoute || user.ImageRoute || '',
@@ -142,3 +145,5 @@ export async function logoutAndClear() {
   await logoutRequest()
   appStore.user = emptyUser()
 }
+
+

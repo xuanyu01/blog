@@ -1,6 +1,5 @@
-/*
-main.go 作为程序启动入口，负责创建应用并启动服务。
-*/
+﻿/*
+main.go 作为程序启动入口，负责创建应用并启动服务。*/
 package main
 
 import (
@@ -19,3 +18,4 @@ func main() {
 		log.Fatal(err)
 	}
 }
+

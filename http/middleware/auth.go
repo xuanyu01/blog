@@ -1,6 +1,5 @@
-/*
-auth.go 提供登录校验中间件。
-*/
+﻿/*
+auth.go 提供登录校验中间件。*/
 package middleware
 
 import (
@@ -35,12 +34,12 @@ func RequireLogin(sessionStore session.Store) gin.HandlerFunc {
 	}
 }
 
-// RequireManager 创建要求用户拥有管理权限的中间件。
+// RequireManager 。。。。Ҫ。。。û。ӵ。й。。。Ȩ。޵。。м。。。。
 func RequireManager(sessionStore session.Store, userProvider currentUserProvider) gin.HandlerFunc {
 	return requirePermission(sessionStore, userProvider, model.CanManageAllBlogs)
 }
 
-// RequireAdmin 创建要求用户拥有管理员权限的中间件。
+// RequireAdmin 。。。。Ҫ。。。û。ӵ。й。。。ԱȨ。޵。。м。。。。
 func RequireAdmin(sessionStore session.Store, userProvider currentUserProvider) gin.HandlerFunc {
 	return requirePermission(sessionStore, userProvider, func(permission string) bool {
 		return permission == model.PermissionAdmin
@@ -100,3 +99,4 @@ func readSession(c *gin.Context, sessionStore session.Store) (string, string, er
 
 	return sessionID, userID, nil
 }
+

@@ -85,7 +85,7 @@ onMounted(async () => {
 
   redirecting.value = true
   success.value = true
-  message.value = '你已登录 3 秒后自动返回首页'
+  message.value = '你已经登录，3 秒后自动返回首页'
 
   setTimeout(() => {
     router.push('/')
@@ -100,7 +100,7 @@ async function handleSubmit() {
   try {
     await register(form)
     success.value = true
-    message.value = '注册成功 2 秒后跳转到登录页'
+    message.value = '注册成功，2 秒后跳转到登录页'
 
     // 给用户一个明确的成功反馈 再跳转到登录页
     setTimeout(() => {

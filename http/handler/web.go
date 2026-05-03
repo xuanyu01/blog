@@ -1,5 +1,5 @@
-/*
-web.go 提供前端页面依赖的公共 HTTP 处理逻辑和辅助函数。
+﻿/*
+web.go 。ṩǰ。。ҳ。。。。。。。Ĺ。。。 HTTP 。。。。。߼。。͸。。。。。。。。。
 */
 package handler
 
@@ -29,7 +29,7 @@ var allowedAvatarTypes = map[string]string{
 	".gif":  "image/gif",
 }
 
-// WebHandler 负责博客和认证相关的 HTTP 处理。
+// WebHandler 。。。𲩿ͺ。。。֤。。ص。 HTTP 。。。。。
 type WebHandler struct {
 	blogService    *service.BlogService
 	commentService *service.CommentService
@@ -103,7 +103,7 @@ type commentCreateRequest struct {
 	Content string `json:"content"`
 }
 
-// NewWebHandler 创建处理器实例。
+// NewWebHandler 。。。。。。。。。。ʵ。。。。
 func NewWebHandler(blogService *service.BlogService, commentService *service.CommentService, authService *service.AuthService, loginLimiter loginRateLimiter) *WebHandler {
 	if loginLimiter == nil {
 		loginLimiter = noopLoginRateLimiter{}
@@ -125,14 +125,14 @@ func (h *WebHandler) GetAppState(c *gin.Context) {
 	})
 }
 
-// SubmitGet 处理 submit 的 GET 请求。
+// SubmitGet 。。。。 submit 。。 GET 。。。。
 func (h *WebHandler) SubmitGet(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{
 		"400": "Access method denied",
 	})
 }
 
-// SubmitPost 处理 submit 的 POST 请求。
+// SubmitPost 。。。。 submit 。。 POST 。。。。
 func (h *WebHandler) SubmitPost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "POST test",
@@ -179,7 +179,7 @@ func splitTagInput(raw string) []string {
 
 // saveAvatarFile 校验头像文件并保存到本地目录。
 func saveAvatarFile(fileHeader *multipart.FileHeader) (string, error) {
-	// 先校验扩展名和文件头，再落盘保存文件。
+	// 先校验扩展名和文件头，再保存文件。
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	allowedContentType, ok := allowedAvatarTypes[ext]
 	if !ok {

@@ -1,4 +1,4 @@
-/*
+﻿/*
 blog_service_test.go 覆盖博客服务的核心业务测试。
 */
 package service
@@ -19,11 +19,15 @@ type fakeBlogRepo struct {
 	adminListAuthor string
 	adminListStatus string
 	favoritePage    int
+	likePage        int
 	favoriteSize    int
+	likeSize        int
 	favoriteUser    string
+	likeUser        string
 	listResult      *model.BlogListResult
 	adminListResult *model.BlogListResult
 	favoriteResult  *model.BlogListResult
+	likeResult      *model.BlogListResult
 	blog            *model.Blog
 	createBlog      *model.Blog
 	updateBlog      *model.Blog
@@ -87,6 +91,17 @@ func (f *fakeBlogRepo) ListFavoritesByUser(page, pageSize int, username string) 
 	f.favoriteUser = username
 	if f.favoriteResult != nil {
 		return f.favoriteResult, nil
+	}
+	return &model.BlogListResult{}, nil
+}
+
+// ListLikesByUser 模拟查询用户点赞列表。
+func (f *fakeBlogRepo) ListLikesByUser(page, pageSize int, username string) (*model.BlogListResult, error) {
+	f.likePage = page
+	f.likeSize = pageSize
+	f.likeUser = username
+	if f.likeResult != nil {
+		return f.likeResult, nil
 	}
 	return &model.BlogListResult{}, nil
 }
@@ -242,7 +257,7 @@ func TestBlogServiceCreateBlogBuildsSlugSummaryStatusAndTags(t *testing.T) {
 	}
 }
 
-// TestBlogServiceUpdateBlogRequiresAuthorOrAdmin 验证更新博客需要作者或管理员权限。
+// TestBlogServiceUpdateBlogRequiresAuthorOrAdmin 。。֤。。。²。。。。。Ҫ。。。߻。。。。ԱȨ。ޡ。
 func TestBlogServiceUpdateBlogRequiresAuthorOrAdmin(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog: &model.Blog{ID: 1, Title: "Old", Content: "Old", AuthorUsername: "alice", Status: "draft"},
@@ -262,7 +277,7 @@ func TestBlogServiceUpdateBlogRequiresAuthorOrAdmin(t *testing.T) {
 	}
 }
 
-// TestBlogServiceUpdateBlogAllowsPublishAndTopForManager 验证管理员可发布并置顶博客。
+// TestBlogServiceUpdateBlogAllowsPublishAndTopForManager 。。֤。。。。Ա。ɷ。。。。。。ö。。。。͡。
 func TestBlogServiceUpdateBlogAllowsPublishAndTopForManager(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog: &model.Blog{ID: 2, Title: "Old", Content: "Old", AuthorUsername: "alice", Status: "draft"},
@@ -327,7 +342,7 @@ func TestBlogServiceGetBlogByIDForUserLoadsInteractionState(t *testing.T) {
 	}
 }
 
-// TestBlogServiceDeleteBlogRequiresAuthorOrAdmin 验证删除博客需要作者或管理员权限。
+// TestBlogServiceDeleteBlogRequiresAuthorOrAdmin 。。֤ɾ。。。。。。。。Ҫ。。。߻。。。。ԱȨ。ޡ。
 func TestBlogServiceDeleteBlogRequiresAuthorOrAdmin(t *testing.T) {
 	repo := &fakeBlogRepo{author: "alice"}
 	service := NewBlogService(repo)
@@ -360,7 +375,7 @@ func TestBlogServiceListBlogsNormalizesPaginationAndFilters(t *testing.T) {
 	}
 }
 
-// TestBlogServiceListManagedBlogsRequiresManagerPermission 验证后台博客列表需要管理权限。
+// TestBlogServiceListManagedBlogsRequiresManagerPermission 。。֤。。̨。。。。。б。。。Ҫ。。。。Ȩ。ޡ。
 func TestBlogServiceListManagedBlogsRequiresManagerPermission(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)
@@ -468,7 +483,7 @@ func TestBlogServiceToggleFavoriteReturnsCounts(t *testing.T) {
 	}
 }
 
-// TestBlogServiceCategoryManagementRequiresManager 验证分类管理需要管理权限。
+// TestBlogServiceCategoryManagementRequiresManager 。。֤。。。。。。。。。Ҫ。。。。Ȩ。ޡ。
 func TestBlogServiceCategoryManagementRequiresManager(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)

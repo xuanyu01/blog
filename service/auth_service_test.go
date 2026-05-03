@@ -1,6 +1,5 @@
-/*
-auth_service_test.go 覆盖认证服务的核心业务测试。
-*/
+﻿/*
+auth_service_test.go 覆盖认证服务的核心业务测试。*/
 package service
 
 import (
@@ -167,7 +166,7 @@ func TestAuthServiceRegisterAndLogin(t *testing.T) {
 	}
 }
 
-// TestAuthServiceUpdateUserPermissionRequiresAdmin 验证修改权限必须由管理员执行。
+// TestAuthServiceUpdateUserPermissionRequiresAdmin 。。֤。޸。Ȩ。ޱ。。。。ɹ。。。Աִ。С。
 func TestAuthServiceUpdateUserPermissionRequiresAdmin(t *testing.T) {
 	repo := &fakeUserRepo{
 		users: map[string]model.User{
@@ -209,3 +208,4 @@ func TestAuthServiceDeleteUserPermissionRules(t *testing.T) {
 		t.Fatalf("expected cannot delete admin user, got %v", err)
 	}
 }
+

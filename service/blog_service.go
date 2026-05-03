@@ -13,7 +13,7 @@ import (
 	"time"
 )
 
-// BlogService 负责博客业务编排。
+// BlogService 负责编排博客相关业务能力。
 type BlogService struct {
 	blogRepo blogRepository
 }
@@ -23,6 +23,7 @@ type blogRepository interface {
 	AdminList(page, pageSize int, keyword, author, status string) (*model.BlogListResult, error)
 	ListByAuthor(page, pageSize int, authorUsername, status string) (*model.BlogListResult, error)
 	ListFavoritesByUser(page, pageSize int, username string) (*model.BlogListResult, error)
+	ListLikesByUser(page, pageSize int, username string) (*model.BlogListResult, error)
 	GetByID(blogID int64) (*model.Blog, error)
 	Create(blog *model.Blog) error
 	GetAuthorByID(blogID int64) (string, error)
@@ -100,6 +101,17 @@ func (s *BlogService) ListFavoriteBlogs(page, pageSize int, currentUsername stri
 
 	page, pageSize = normalizeBlogPagination(page, pageSize)
 	return s.blogRepo.ListFavoritesByUser(page, pageSize, currentUsername)
+}
+
+// ListLikedBlogs 返回当前用户点赞过的博客列表。
+func (s *BlogService) ListLikedBlogs(page, pageSize int, currentUsername string) (*model.BlogListResult, error) {
+	currentUsername = strings.TrimSpace(currentUsername)
+	if currentUsername == "" {
+		return nil, errors.New("unauthorized")
+	}
+
+	page, pageSize = normalizeBlogPagination(page, pageSize)
+	return s.blogRepo.ListLikesByUser(page, pageSize, currentUsername)
 }
 
 // GetBlogByID 读取博客详情。
@@ -508,7 +520,6 @@ func normalizeTagNames(raw []string) ([]model.Tag, error) {
 		return nil, nil
 	}
 
-	// 用 map 去重，避免同一篇文章重复写入同名标签。
 	seen := map[string]struct{}{}
 	items := make([]model.Tag, 0, len(raw))
 	for _, name := range raw {

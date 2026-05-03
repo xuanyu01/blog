@@ -8,7 +8,7 @@
         </div>
         <div class="favorites-head-actions">
           <RouterLink to="/" class="secondary-link">返回首页</RouterLink>
-          <RouterLink to="/user" class="secondary-link">用户中心</RouterLink>
+          <RouterLink :to="`/user/${store.user.id}`" class="secondary-link">用户主页</RouterLink>
         </div>
       </div>
 
@@ -19,43 +19,20 @@
 
       <div v-else-if="favorites.length" class="favorite-grid">
         <article v-for="item in favorites" :key="item.id" class="favorite-card">
-          <div class="favorite-meta">
-            <span class="favorite-status">{{ statusLabel(item.status) }}</span>
-            <span>{{ formatDate(item.publishedAt || item.updatedAt || item.createdAt) }}</span>
-          </div>
-
+          <div class="favorite-meta"><span class="favorite-status">{{ statusLabel(item.status) }}</span><span>{{ formatDate(item.publishedAt || item.updatedAt || item.createdAt) }}</span></div>
           <h3>{{ item.title || '未命名博客' }}</h3>
           <p>{{ item.summary || '这篇博客还没有摘要。' }}</p>
-
-          <div class="favorite-extra">
-            <span>作者：{{ item.authorUsername || 'unknown' }}</span>
-            <span>收藏 {{ item.stats.favoriteCount }}</span>
-          </div>
-
+          <div class="favorite-extra"><span>作者：{{ item.authorUsername || 'unknown' }}</span><span>收藏 {{ item.stats.favoriteCount }}</span></div>
           <div class="favorite-actions">
             <RouterLink :to="`/blog/${item.id}`" class="primary-link">查看详情</RouterLink>
-            <button
-              type="button"
-              class="danger-btn"
-              :disabled="cancelingID === item.id"
-              @click="handleUnfavorite(item)"
-            >
-              {{ cancelingID === item.id ? '取消中...' : '取消收藏' }}
-            </button>
+            <button type="button" class="danger-btn" :disabled="cancelingID === item.id" @click="handleUnfavorite(item)">{{ cancelingID === item.id ? '取消中...' : '取消收藏' }}</button>
           </div>
         </article>
       </div>
 
-      <div v-else class="empty-card">
-        <h3>你还没有收藏博客</h3>
-        <p>看到感兴趣的文章时点一下“收藏”，这里就会出现对应内容。</p>
-      </div>
+      <div v-else class="empty-card"><h3>你还没有收藏博客</h3><p>遇到感兴趣的文章时点一下收藏，这里就会出现对应内容。</p></div>
     </div>
-
-    <div v-else class="empty-card">
-      <h3>你还没有登录</h3>
-      <p>请先登录后再查看自己的收藏。</p>
-    </div>
+    <div v-else class="empty-card"><h3>你还没有登录</h3><p>请先登录后再查看自己的收藏。</p></div>
   </section>
 </template>
 
@@ -81,91 +58,26 @@ function normalizeBlog(item = {}) {
     createdAt: item.createdAt ?? item.CreatedAt ?? '',
     updatedAt: item.updatedAt ?? item.UpdatedAt ?? '',
     publishedAt: item.publishedAt ?? item.PublishedAt ?? '',
-    stats: {
-      favoriteCount: Number(item.stats?.favoriteCount ?? item.Stats?.FavoriteCount ?? item.favoriteCount ?? 0)
-    }
+    stats: { favoriteCount: Number(item.stats?.favoriteCount ?? item.Stats?.FavoriteCount ?? item.favoriteCount ?? 0) }
   }
 }
-
-function statusLabel(status) {
-  switch (status) {
-    case 'published':
-      return '已发布'
-    case 'hidden':
-      return '已隐藏'
-    default:
-      return '草稿'
-  }
-}
-
+function statusLabel(status) { return status === 'published' ? '已发布' : status === 'hidden' ? '已隐藏' : '草稿' }
 function formatDate(value) {
-  if (!value) {
-    return '刚刚更新'
-  }
-
+  if (!value) return '刚刚更新'
   const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return String(value)
-  }
-
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
+  if (Number.isNaN(date.getTime())) return String(value)
+  return date.toLocaleString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
 }
-
 onMounted(async () => {
-  const user = await refreshCurrentUser()
-  ready.value = true
-
-  if (!user.isLogin) {
-    setTimeout(() => router.push('/login'), 1200)
-    return
-  }
-
+  const user = await refreshCurrentUser(); ready.value = true
+  if (!user.isLogin) { setTimeout(() => router.push('/login'), 1200); return }
   loading.value = true
-  try {
-    const data = await getCurrentUserFavorites({
-      page: 1,
-      pageSize: 50
-    })
-    favorites.value = (data.items || []).map(normalizeBlog)
-  } finally {
-    loading.value = false
-  }
+  try { const data = await getCurrentUserFavorites({ page: 1, pageSize: 50 }); favorites.value = (data.items || []).map(normalizeBlog) } finally { loading.value = false }
 })
-
 async function handleUnfavorite(item) {
-  if (!item?.id || cancelingID.value) {
-    return
-  }
-
+  if (!item?.id || cancelingID.value) return
   cancelingID.value = item.id
-  try {
-    const result = await toggleBlogFavorite(item.id)
-    if (!result.active) {
-      favorites.value = favorites.value.filter((favorite) => favorite.id !== item.id)
-      return
-    }
-
-    favorites.value = favorites.value.map((favorite) => {
-      if (favorite.id !== item.id) {
-        return favorite
-      }
-      return {
-        ...favorite,
-        stats: {
-          ...favorite.stats,
-          favoriteCount: Number(result.favoriteCount ?? favorite.stats.favoriteCount)
-        }
-      }
-    })
-  } finally {
-    cancelingID.value = 0
-  }
+  try { const result = await toggleBlogFavorite(item.id); if (!result.active) favorites.value = favorites.value.filter((favorite) => favorite.id !== item.id) } finally { cancelingID.value = 0 }
 }
 </script>
 
@@ -282,3 +194,5 @@ async function handleUnfavorite(item) {
   }
 }
 </style>
+
+

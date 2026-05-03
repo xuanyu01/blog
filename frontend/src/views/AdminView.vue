@@ -2,7 +2,7 @@
   <section v-if="ready" class="page-block admin-page">
     <div v-if="canEnter" class="admin-layout">
       <aside class="admin-sidebar">
-        <div class="admin-sidebar-title">管理导航</div>
+        <div class="admin-sidebar-title">管理中心</div>
         <button type="button" class="admin-nav-item" :class="{ active: activeTab === 'users' }" @click="switchTab('users')">
           用户管理
         </button>
@@ -81,7 +81,7 @@
           </div>
 
           <div v-else class="empty-card admin-empty">
-            <h3>暂无用户数据</h3>
+            <h3>暂无用户信息</h3>
             <p>当前没有可展示的用户信息。</p>
           </div>
 
@@ -172,7 +172,7 @@
           </div>
 
           <div v-else class="empty-card admin-empty">
-            <h3>暂无博客数据</h3>
+            <h3>暂无博客内容</h3>
             <p>当前筛选条件下没有可管理的文章。</p>
           </div>
 
@@ -187,12 +187,12 @@
           <div class="panel-head">
             <div>
               <h2>分类管理</h2>
-              <p>管理员和用户管理员可以新增、重命名、隐藏可选分类。</p>
+              <p>管理员和用户管理员可以维护分类，方便文章归档和筛选。</p>
             </div>
           </div>
 
           <form class="category-form" @submit.prevent="handleCreateCategory">
-            <input v-model.trim="newCategoryName" class="field-input" type="text" maxlength="50" placeholder="输入新的分类名称" />
+            <input v-model.trim="newCategoryName" class="field-input" type="text" maxlength="50" placeholder="请输入新的分类名称" />
             <button type="submit" class="primary-btn" :disabled="categorySaving">新增分类</button>
           </form>
 
@@ -247,8 +247,8 @@
     </div>
 
     <div v-else class="empty-card">
-      <h3>无权访问管理后台</h3>
-      <p>只有用户管理员和系统管理员可以进入这里。</p>
+      <h3>无权使用后台</h3>
+      <p>只有用户管理员或系统管理员可以进入这里。</p>
     </div>
   </section>
 </template>

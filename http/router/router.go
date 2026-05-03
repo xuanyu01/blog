@@ -1,4 +1,4 @@
-/*
+﻿/*
 router.go 负责注册 HTTP 路由并提供前端静态资源访问。
 */
 package router
@@ -16,13 +16,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// New 创建并配置 Gin 路由。
+// New 创建并配。Gin 路由。
 func New(webHandler *handler.WebHandler, sessionStore session.Store, authService *service.AuthService) *gin.Engine {
 	r := gin.Default()
 	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
 
-	// 用户上传的头像统一从 frontend/img 提供访问。
-	r.Static("/img", filepath.Join("frontend", "img"))
+	// 用户上传的头像统一。frontend/img 提供访问。	r.Static("/img", filepath.Join("frontend", "img"))
 
 	api := r.Group("/api")
 	api.GET("/state", webHandler.GetAppState)
@@ -45,6 +44,7 @@ func New(webHandler *handler.WebHandler, sessionStore session.Store, authService
 	authRequired.PUT("/user/password", webHandler.UpdatePassword)
 	authRequired.GET("/user/blogs", webHandler.ListCurrentUserBlogs)
 	authRequired.GET("/user/favorites", webHandler.ListFavoriteBlogs)
+	authRequired.GET("/user/likes", webHandler.ListLikedBlogs)
 	authRequired.POST("/user/avatar", webHandler.UploadAvatar)
 	authRequired.POST("/blogs", webHandler.CreateBlog)
 	authRequired.POST("/blogs/:id/like", webHandler.ToggleBlogLike)

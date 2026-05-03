@@ -1,6 +1,6 @@
 <!--
 /*
-	这个文件定义用户头像上传页面组件
+	这个文件定义头像上传页面组件。
 */
 -->
 <template>
@@ -8,8 +8,8 @@
     <div class="container" v-if="user.isLogin">
       <div class="upload-layout">
         <div class="upload-card">
-          <h2>更换头像</h2>
-          <p class="upload-desc">支持 png jpg jpeg gif 图片 上传后会保存到 frontend/img 目录</p>
+          <h2>上传头像</h2>
+          <p class="upload-desc">支持 png、jpg、jpeg、gif 图片，上传后会保存到 frontend/img 目录。</p>
 
           <div class="avatar-preview">
             <img v-if="previewImage" :src="previewImage" class="avatar-large" :alt="displayNameForView" />
@@ -26,7 +26,7 @@
           <p class="upload-name" v-if="selectedFile">{{ selectedFile.name }}</p>
 
           <div class="upload-actions">
-            <button type="button" class="secondary-btn" @click="router.push('/user')">返回用户中心</button>
+            <button type="button" class="secondary-btn" @click="router.push(`/user/${store.user.id}/edit`)">返回资料编辑</button>
             <button type="button" class="primary-btn" :disabled="uploading || !selectedFile" @click="handleUpload">
               {{ uploading ? '上传中...' : '上传头像' }}
             </button>
@@ -41,14 +41,14 @@
 
     <div class="empty-card" v-else>
       <h3>你还没有登录</h3>
-      <p>请先登录后再访问头像上传页面</p>
+      <p>请先登录后再上传头像。</p>
     </div>
   </section>
 </template>
 
 <script setup>
 /*
-	这个页面负责上传并更新当前用户头像
+	这个页面负责上传并更新当前用户头像。
 */
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -67,7 +67,6 @@ const displayNameForView = computed(() => user.value.displayName || user.value.u
 const initials = computed(() => displayNameForView.value.slice(0, 1).toUpperCase())
 const previewImage = computed(() => previewUrl.value || (user.value.imageRoute ? `/img/${user.value.imageRoute}` : ''))
 
-// 页面挂载后同步当前用户状态
 onMounted(async () => {
   const currentUser = await refreshCurrentUser()
   ready.value = true
@@ -77,7 +76,6 @@ onMounted(async () => {
   }
 })
 
-// handleFileChange 选择文件后更新本地预览
 function handleFileChange(event) {
   const [file] = event.target.files || []
   selectedFile.value = file || null
@@ -91,7 +89,6 @@ function handleFileChange(event) {
   previewUrl.value = URL.createObjectURL(file)
 }
 
-// handleUpload 提交头像上传
 async function handleUpload() {
   if (!selectedFile.value) {
     return
@@ -103,10 +100,10 @@ async function handleUpload() {
   try {
     await uploadAvatarAndSync(selectedFile.value)
     success.value = true
-    message.value = '头像上传成功 1 秒后返回用户中心'
+    message.value = '头像上传成功，1 秒后返回资料编辑页'
 
     setTimeout(() => {
-      router.push('/user')
+      router.push(`/user/${store.user.id}/edit`)
     }, 1000)
   } catch (error) {
     success.value = false
@@ -192,3 +189,5 @@ async function handleUpload() {
   opacity: 0.72;
 }
 </style>
+
+

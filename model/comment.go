@@ -1,4 +1,4 @@
-/*
+﻿/*
 comment.go 定义评论相关模型。
 */
 package model
@@ -15,3 +15,4 @@ type Comment struct {
 	Content     string    `json:"content"`
 	CreatedAt   time.Time `json:"createdAt"`
 }
+

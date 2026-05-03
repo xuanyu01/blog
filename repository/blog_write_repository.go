@@ -1,5 +1,5 @@
-/*
-blog_write_repository.go 负责博客写入、更新、删除以及分类管理逻辑。
+﻿/*
+blog_write_repository.go 。。。𲩿。д。롢。。。¡。ɾ。。。Լ。。。。。。。。。߼。。。
 */
 package repository
 
@@ -17,8 +17,7 @@ func (r *BlogRepository) Create(blog *model.Blog) error {
 		return tx.Error
 	}
 	defer tx.Rollback()
-
-	// 先写主表，再补全文内容、统计数据和标签关联。
+	// 先解析作者 ID，避免后续写入文章时丢失作者关系。
 	authorID, err := getUserIDByUsername(tx, blog.AuthorUsername)
 	if err != nil {
 		return err

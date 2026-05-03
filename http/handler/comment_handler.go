@@ -1,5 +1,5 @@
-/*
-comment_handler.go 处理评论查询、发布和删除相关接口。
+﻿/*
+comment_handler.go 。。。。。。。۲。ѯ。。。。。。。。ɾ。。。。ؽӿڡ。
 */
 package handler
 
@@ -131,3 +131,4 @@ func (h *WebHandler) DeleteComment(c *gin.Context) {
 		"message": "Comment deleted",
 	})
 }
+

@@ -1,6 +1,5 @@
-/*
-auth_handler.go 处理注册、登录、登出和用户资料相关接口。
-*/
+﻿/*
+auth_handler.go 。。。。ע。ᡢ。。¼。。。ǳ。。。。û。。。。。。。ؽӿڡ。*/
 package handler
 
 import (
@@ -18,7 +17,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Register 处理注册请求。
+// Register 。。。。ע。。。。。。
 func (h *WebHandler) Register(c *gin.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
@@ -42,7 +41,7 @@ func (h *WebHandler) Register(c *gin.Context) {
 	})
 }
 
-// Login 处理登录请求。
+// Login 。。。。。¼。。。。
 func (h *WebHandler) Login(c *gin.Context) {
 	username := strings.TrimSpace(c.PostForm("username"))
 	password := c.PostForm("password")
@@ -125,7 +124,7 @@ func (h *WebHandler) CurrentUser(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
-// UpdateProfile 处理用户资料修改请求。
+// UpdateProfile 。。。。。û。。。。。。޸。。。。。
 func (h *WebHandler) UpdateProfile(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
@@ -158,7 +157,7 @@ func (h *WebHandler) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
-// UploadAvatar 处理头像上传请求。
+// UploadAvatar 。。。。ͷ。。。ϴ。。。。。
 func (h *WebHandler) UploadAvatar(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
@@ -195,7 +194,7 @@ func (h *WebHandler) UploadAvatar(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
-// UpdatePassword 处理密码修改请求。
+// UpdatePassword 。。。。。。。。。޸。。。。。
 func (h *WebHandler) UpdatePassword(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
@@ -229,7 +228,7 @@ func (h *WebHandler) UpdatePassword(c *gin.Context) {
 	})
 }
 
-// UpdateUserPermission 处理权限修改请求。
+// UpdateUserPermission 。。。。Ȩ。。。޸。。。。。
 func (h *WebHandler) UpdateUserPermission(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
@@ -306,7 +305,7 @@ func (h *WebHandler) ListUsers(c *gin.Context) {
 	})
 }
 
-// DeleteUser 处理用户删除请求。
+// DeleteUser 。。。。。û。ɾ。。。。。。
 func (h *WebHandler) DeleteUser(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
@@ -354,3 +353,4 @@ func buildLoginLimitKey(ip, username string) string {
 	hash := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(hash[:])
 }
+

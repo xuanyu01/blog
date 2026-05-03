@@ -1,4 +1,4 @@
-/*
+﻿/*
 user.go 定义用户、用户视图和资料更新相关模型。
 */
 package model
@@ -15,6 +15,7 @@ type User struct {
 
 // UserView 表示前端使用的用户信息。
 type UserView struct {
+	ID          int64  `json:"id"`
 	UserName    string `json:"userName"`
 	DisplayName string `json:"displayName"`
 	ImageRoute  string `json:"imageRoute"`

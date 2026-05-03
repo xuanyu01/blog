@@ -1,4 +1,4 @@
-async function request(url, options = {}) {
+﻿async function request(url, options = {}) {
   const headers = {
     ...(options.headers || {})
   }
@@ -246,6 +246,13 @@ export function getCurrentUserFavorites(params = {}) {
   return request(`/api/user/favorites?${searchParams.toString()}`)
 }
 
+
+export function getCurrentUserLikes(params = {}) {
+  const searchParams = new URLSearchParams()
+  searchParams.set('page', String(params.page || 1))
+  searchParams.set('pageSize', String(params.pageSize || 10))
+  return request(`/api/user/likes?${searchParams.toString()}`)
+}
 export function getAdminBlogs(params = {}) {
   const searchParams = new URLSearchParams()
   searchParams.set('page', String(params.page || 1))
@@ -281,3 +288,4 @@ export function deleteManagedUser(username) {
     method: 'DELETE'
   })
 }
+

@@ -1,6 +1,5 @@
-/*
-blog_repository_shared.go 定义博客仓储结构以及查询、标签、Markdown 处理等公共辅助逻辑。
-*/
+﻿/*
+blog_repository_shared.go 。。。岩。Ͳִ。。ṹ。Լ。。。ѯ。。。。ǩ。。Markdown 。。。。ȹ。。。。。。。。߼。。。*/
 package repository
 
 import (

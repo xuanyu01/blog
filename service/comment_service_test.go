@@ -1,6 +1,5 @@
-/*
-comment_service_test.go 覆盖评论服务的核心业务测试。
-*/
+﻿/*
+comment_service_test.go 覆盖评论服务的核心业务测试。*/
 package service
 
 import (
@@ -114,7 +113,7 @@ func TestCommentServiceDeleteCommentAllowsAuthor(t *testing.T) {
 	}
 }
 
-// TestCommentServiceDeleteCommentAllowsManager 验证管理员可以删除评论。
+// TestCommentServiceDeleteCommentAllowsManager 。。֤。。。。Ա。。。。ɾ。。。。。ۡ。
 func TestCommentServiceDeleteCommentAllowsManager(t *testing.T) {
 	repo := &fakeCommentRepo{author: "alice"}
 	service := NewCommentService(repo, &fakeCommentBlogRepo{})
@@ -137,3 +136,4 @@ func TestCommentServiceDeleteCommentRejectsOtherUser(t *testing.T) {
 		t.Fatalf("expected forbidden error, got %v", err)
 	}
 }
+

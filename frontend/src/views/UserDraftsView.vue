@@ -1,127 +1,23 @@
 <template>
   <section v-if="ready" class="page-block user-page">
-    <div v-if="store.user.isLogin" class="container drafts-page">
-      <div class="drafts-head">
-        <div>
-          <h2>我的草稿</h2>
-          <p>查看自己保存过的草稿，也可以继续编辑或直接进入详情页。</p>
-        </div>
-        <div class="drafts-head-actions">
-          <RouterLink to="/blog/create" class="primary-link">新建博客</RouterLink>
-          <RouterLink to="/user" class="secondary-link">返回用户中心</RouterLink>
-        </div>
-      </div>
-
-      <div v-if="loading" class="empty-card">
-        <h3>正在加载草稿</h3>
-        <p>请稍候，正在获取你保存的草稿列表。</p>
-      </div>
-
-      <div v-else-if="drafts.length" class="draft-grid">
-        <article v-for="item in drafts" :key="item.id" class="draft-card">
-          <div class="draft-meta">
-            <span class="draft-status">{{ statusLabel(item.status) }}</span>
-            <span>{{ formatDate(item.updatedAt || item.createdAt) }}</span>
-          </div>
-
-          <h3>{{ item.title || '未命名草稿' }}</h3>
-          <p>{{ item.summary || '这篇草稿还没有摘要。' }}</p>
-
-          <div class="draft-actions">
-            <RouterLink :to="`/blog/${item.id}`" class="secondary-link">查看草稿</RouterLink>
-            <RouterLink :to="`/blog/${item.id}/edit`" class="primary-link">继续编辑</RouterLink>
-          </div>
-        </article>
-      </div>
-
-      <div v-else class="empty-card">
-        <h3>你还没有草稿</h3>
-        <p>先去发布页写点内容，点一次“先存草稿”后就会出现在这里。</p>
-      </div>
+    <div v-if="store.user.isLogin" class="container favorites-page">
+      <div class="favorites-head"><div><h2>我的草稿</h2><p>查看自己保存的草稿，也可以继续编辑。</p></div><div class="favorites-head-actions"><RouterLink to="/blog/create" class="primary-link">新建博客</RouterLink><RouterLink :to="`/user/${store.user.id}`" class="secondary-link">返回用户主页</RouterLink></div></div>
+      <div v-if="loading" class="empty-card"><h3>正在加载草稿</h3><p>请稍候，正在获取你保存的草稿列表。</p></div>
+      <div v-else-if="drafts.length" class="favorite-grid"><article v-for="item in drafts" :key="item.id" class="favorite-card"><h3>{{ item.title || '未命名草稿' }}</h3><p>{{ item.summary || '这篇草稿还没有摘要。' }}</p><div class="favorite-actions"><RouterLink :to="`/blog/${item.id}/edit`" class="primary-link">继续编辑</RouterLink></div></article></div>
+      <div v-else class="empty-card"><h3>你还没有草稿</h3><p>去创作页写点内容，保存为草稿后就会显示在这里。</p></div>
     </div>
-
-    <div v-else class="empty-card">
-      <h3>你还没有登录</h3>
-      <p>请先登录后再查看自己的草稿。</p>
-    </div>
+    <div v-else class="empty-card"><h3>你还没有登录</h3><p>请先登录后再查看自己的草稿。</p></div>
   </section>
 </template>
-
 <script setup>
 import { onMounted, ref } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { getCurrentUserBlogs } from '../api/client'
 import { appStore as store, refreshCurrentUser } from '../store/appStore'
-
-const router = useRouter()
-const ready = ref(false)
-const loading = ref(false)
-const drafts = ref([])
-
-function normalizeBlog(item = {}) {
-  return {
-    id: item.id ?? item.ID ?? 0,
-    title: item.title ?? item.Title ?? '',
-    summary: item.summary ?? item.Summary ?? '',
-    status: item.status ?? item.Status ?? 'draft',
-    createdAt: item.createdAt ?? item.CreatedAt ?? '',
-    updatedAt: item.updatedAt ?? item.UpdatedAt ?? ''
-  }
-}
-
-function statusLabel(status) {
-  switch (status) {
-    case 'published':
-      return '已发布'
-    case 'hidden':
-      return '已隐藏'
-    default:
-      return '草稿'
-  }
-}
-
-function formatDate(value) {
-  if (!value) {
-    return '刚刚更新'
-  }
-
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return String(value)
-  }
-
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
-
-onMounted(async () => {
-  const user = await refreshCurrentUser()
-  ready.value = true
-
-  if (!user.isLogin) {
-    setTimeout(() => router.push('/login'), 1200)
-    return
-  }
-
-  loading.value = true
-  try {
-    const data = await getCurrentUserBlogs({
-      page: 1,
-      pageSize: 50,
-      status: 'draft'
-    })
-    drafts.value = (data.items || []).map(normalizeBlog)
-  } finally {
-    loading.value = false
-  }
-})
+const router = useRouter(); const ready = ref(false); const loading = ref(false); const drafts = ref([])
+function normalizeBlog(item = {}) { return { id: item.id ?? item.ID ?? 0, title: item.title ?? item.Title ?? '', summary: item.summary ?? item.Summary ?? '' } }
+onMounted(async () => { const user = await refreshCurrentUser(); ready.value = true; if (!user.isLogin) { setTimeout(() => router.push('/login'), 1200); return } loading.value = true; try { const data = await getCurrentUserBlogs({ page: 1, pageSize: 50, status: 'draft' }); drafts.value = (data.items || []).map(normalizeBlog) } finally { loading.value = false } })
 </script>
-
 <style scoped>
 .drafts-page {
   display: grid;
@@ -221,3 +117,5 @@ onMounted(async () => {
   }
 }
 </style>
+
+

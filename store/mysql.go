@@ -1,5 +1,5 @@
-/*
-mysql.go 负责初始化 MySQL 的 GORM 数据库连接。
+﻿/*
+mysql.go 负责初始。MySQL 。GORM 数据库连接。
 */
 package store
 
@@ -19,18 +19,17 @@ func NewMySQL(cfg config.MySQLConfig) (*gorm.DB, error) {
 		return nil, err
 	}
 
-	// 获取底层的 sql.DB 以设置连接池参数
+	// 获取底层。sql.DB 以设置连接池参数
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, err
 	}
 
-	// 测试数据库连接
+	// 测试数据库连。
 	if err := sqlDB.Ping(); err != nil {
 		return nil, err
 	}
-
-	// 设置连接池参数
+	// 统一设置连接池参数。
 	sqlDB.SetConnMaxLifetime(time.Hour)
 	sqlDB.SetMaxIdleConns(10)
 	sqlDB.SetMaxOpenConns(20)

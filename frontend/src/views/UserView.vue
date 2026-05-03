@@ -1,6 +1,6 @@
 <!--
 /*
-	这个文件定义用户中心页面组件
+	这个文件定义用户资料编辑页面组件。
 */
 -->
 <template>
@@ -24,20 +24,20 @@
         </div>
 
         <div class="quick-actions">
-          <RouterLink to="/blog/create" class="action-card action-card-primary">
-            <strong>创建博客</strong>
-            <span>进入编辑页面发布新的博客内容</span>
+          <RouterLink :to="profilePath" class="action-card action-card-primary">
+            <strong>返回个人主页</strong>
+            <span>查看自己发布、点赞和收藏过的博客</span>
           </RouterLink>
 
           <RouterLink to="/user/avatar" class="action-card">
             <strong>修改头像</strong>
-            <span>支持上传 png jpg jpeg gif 图片</span>
+            <span>支持上传 png、jpg、jpeg、gif 图片</span>
           </RouterLink>
         </div>
 
         <div class="user-grid">
           <form class="panel" @submit.prevent="handleProfileSubmit">
-            <h3>基本资料</h3>
+            <h3>资料信息</h3>
 
             <label class="field">
               <span>账号</span>
@@ -97,17 +97,17 @@
 
     <div class="empty-card" v-else>
       <h3>你还没有登录</h3>
-      <p>请先登录后再访问用户中心</p>
+      <p>请先登录后再访问用户资料编辑页</p>
     </div>
   </section>
 </template>
 
 <script setup>
 /*
-	这个页面负责展示和修改当前登录用户的基本信息
+	这个页面负责展示和修改当前登录用户的基本信息。
 */
 import { computed, onMounted, reactive, ref } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
+import { RouterLink, useRoute, useRouter } from 'vue-router'
 import {
   appStore as store,
   changeUserPassword,
@@ -115,6 +115,7 @@ import {
   saveUserProfile
 } from '../store/appStore'
 
+const route = useRoute()
 const router = useRouter()
 const ready = ref(false)
 const profileSaving = ref(false)
@@ -133,37 +134,26 @@ const passwordForm = reactive({
   newPassword: ''
 })
 
-// user 是当前用户状态的计算属性别名
 const user = computed(() => store.user)
-
-// displayNameForView 优先显示显示名称
 const displayNameForView = computed(() => user.value.displayName || user.value.userName || '用户')
-
-// permissionText 把权限值转换为中文展示
 const permissionText = computed(() => {
   switch (user.value.permission) {
     case 'admin':
       return '系统管理员'
     case 'user_admin':
       return '用户管理员'
-    case 'user':
     default:
       return '普通用户'
   }
 })
-
-// initials 用于在没有头像时生成占位字母
 const initials = computed(() => displayNameForView.value.slice(0, 1).toUpperCase())
-
-// previewImage 用于预览当前头像
 const previewImage = computed(() => (user.value.imageRoute ? `/img/${user.value.imageRoute}` : ''))
+const profilePath = computed(() => `/user/${user.value.id}`)
 
-// syncProfileForm 把当前用户信息同步到表单
 function syncProfileForm(currentUser) {
   profileForm.displayName = currentUser.displayName || ''
 }
 
-// 页面挂载后同步当前用户状态
 onMounted(async () => {
   const currentUser = await refreshCurrentUser()
   ready.value = true
@@ -173,10 +163,15 @@ onMounted(async () => {
     return
   }
 
+  const routeID = Number.parseInt(route.params.id, 10)
+  if (routeID !== currentUser.id) {
+    router.replace(`/user/${currentUser.id}/edit`)
+    return
+  }
+
   syncProfileForm(currentUser)
 })
 
-// handleProfileSubmit 提交资料修改
 async function handleProfileSubmit() {
   profileSaving.value = true
   profileMessage.value = ''
@@ -198,7 +193,6 @@ async function handleProfileSubmit() {
   }
 }
 
-// handlePasswordSubmit 提交密码修改
 async function handlePasswordSubmit() {
   passwordSaving.value = true
   passwordMessage.value = ''
@@ -221,6 +215,7 @@ async function handlePasswordSubmit() {
   }
 }
 </script>
+
 
 <style scoped>
 .user-dashboard {

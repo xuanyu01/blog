@@ -1,4 +1,4 @@
-/*
+﻿/*
 user_repository.go 负责用户数据的查询和写入逻辑。
 */
 package repository
@@ -171,3 +171,4 @@ func (r *UserRepository) CountUsers() (int, error) {
 func (r *UserRepository) DeleteUser(username string) error {
 	return r.db.Exec("UPDATE users SET deleted_at=NOW(), status='deleted' WHERE username=? AND deleted_at IS NULL", username).Error
 }
+

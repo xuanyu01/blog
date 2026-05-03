@@ -1,6 +1,5 @@
-/*
-config.go 负责从环境变量和 .env 文件加载运行配置。
-*/
+﻿/*
+config.go 负责从环境变量和 .env 文件加载运行配置。*/
 package config
 
 import (
@@ -64,7 +63,7 @@ func New() (Config, error) {
 		return Config{}, err
 	}
 
-	// 从环境变量构建配置对象，并进行必要的类型转换和校验
+	// 从环境变量构建配置对象，并进行必要的类型转换和校。
 	cfg := Config{
 		Server: ServerConfig{
 			Address: strings.TrimSpace(os.Getenv("APP_ADDR")),
@@ -195,7 +194,7 @@ func loadDotEnv(path string) error {
 			return fmt.Errorf("empty env key in .env: %s", line)
 		}
 
-		// 已存在的环境变量优先于 .env 中的值。
+		// 已存在的环境变量优先。.env 中的值。
 		if _, exists := os.LookupEnv(key); exists {
 			continue
 		}

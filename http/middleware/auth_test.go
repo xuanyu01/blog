@@ -1,6 +1,5 @@
-/*
-auth_test.go 覆盖登录守卫和权限守卫中间件的核心行为。
-*/
+﻿/*
+auth_test.go 覆盖登录守卫和权限守卫中间件的核心行为。*/
 package middleware
 
 import (
@@ -56,7 +55,7 @@ func TestRequireLoginRejectsMissingCookie(t *testing.T) {
 	}
 }
 
-// TestRequireManagerRejectsUser 验证普通用户不能通过管理权限守卫。
+// TestRequireManagerRejectsUser 。。֤。。ͨ。û。。。。。ͨ。。。。。。Ȩ。。。。。。。。
 func TestRequireManagerRejectsUser(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
@@ -84,7 +83,7 @@ func TestRequireManagerRejectsUser(t *testing.T) {
 	}
 }
 
-// TestRequireAdminAllowsAdmin 验证管理员可以通过管理员守卫。
+// TestRequireAdminAllowsAdmin 。。֤。。。。Ա。。。。ͨ。。。。。。Ա。。。。。。
 func TestRequireAdminAllowsAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	recorder := httptest.NewRecorder()
@@ -111,3 +110,4 @@ func TestRequireAdminAllowsAdmin(t *testing.T) {
 		t.Fatalf("expected 200, got %d", recorder.Code)
 	}
 }
+
