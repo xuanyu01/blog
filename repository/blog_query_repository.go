@@ -1,5 +1,5 @@
-﻿/*
-blog_query_repository.go 负责博客、分类、标签、归档和收藏列表的查询逻辑。
+/*
+负责博客、分类、标签、归档和收藏列表的查询逻辑。
 */
 package repository
 
@@ -33,7 +33,7 @@ func (r *BlogRepository) List(page, pageSize int, query model.BlogListQuery) (*m
 			COALESCE(p.slug, ''),
 			COALESCE(p.summary, ''),
 			COALESCE(pc.content_markdown, ''),
-			COALESCE(u.username, ''),
+			CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END,
 			p.status,
 			p.is_top,
 			p.created_at,
@@ -91,7 +91,7 @@ func (r *BlogRepository) List(page, pageSize int, query model.BlogListQuery) (*m
 	listQuery += `
 		GROUP BY
 			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
-			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			pc.content_markdown, u.id, u.username, u.status, p.status, p.is_top, p.created_at, p.updated_at,
 			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count
 		ORDER BY tag_match_score DESC, text_match_score DESC, p.is_top DESC, p.published_at DESC, p.id DESC
 		LIMIT ? OFFSET ?
@@ -147,7 +147,7 @@ func (r *BlogRepository) AdminList(page, pageSize int, keyword, author, status s
 			COALESCE(p.slug, ''),
 			COALESCE(p.summary, ''),
 			COALESCE(pc.content_markdown, ''),
-			COALESCE(u.username, ''),
+			CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END,
 			p.status,
 			p.is_top,
 			p.created_at,
@@ -176,7 +176,7 @@ func (r *BlogRepository) AdminList(page, pageSize int, keyword, author, status s
 				p.title LIKE ?
 				OR COALESCE(p.summary, '') LIKE ?
 				OR COALESCE(pc.content_text, pc.content_markdown, '') LIKE ?
-				OR COALESCE(u.username, '') LIKE ?
+				OR CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END LIKE ?
 			)
 		`
 		countQuery += filter
@@ -185,7 +185,7 @@ func (r *BlogRepository) AdminList(page, pageSize int, keyword, author, status s
 		listArgs = append(listArgs, likeKeyword, likeKeyword, likeKeyword, likeKeyword)
 	}
 	if author != "" {
-		filter := ` AND COALESCE(u.username, '') LIKE ?`
+		filter := ` AND CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END LIKE ?`
 		countQuery += filter
 		listQuery += filter
 		countArgs = append(countArgs, likeAuthor)
@@ -207,7 +207,7 @@ func (r *BlogRepository) AdminList(page, pageSize int, keyword, author, status s
 	listQuery += `
 		GROUP BY
 			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
-			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			pc.content_markdown, u.id, u.username, u.status, p.status, p.is_top, p.created_at, p.updated_at,
 			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count
 		ORDER BY p.is_top DESC, p.created_at DESC, p.id DESC
 		LIMIT ? OFFSET ?
@@ -251,7 +251,7 @@ func (r *BlogRepository) ListByAuthor(page, pageSize int, authorUsername, status
 			COALESCE(p.slug, ''),
 			COALESCE(p.summary, ''),
 			COALESCE(pc.content_markdown, ''),
-			COALESCE(u.username, ''),
+			CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END,
 			p.status,
 			p.is_top,
 			p.created_at,
@@ -269,13 +269,13 @@ func (r *BlogRepository) ListByAuthor(page, pageSize int, authorUsername, status
 		LEFT JOIN post_stats ps ON ps.post_id = p.id
 		LEFT JOIN post_tags pt ON pt.post_id = p.id
 		LEFT JOIN tags t ON t.id = pt.tag_id
-		WHERE p.deleted_at IS NULL AND COALESCE(u.username, '') = ?
+		WHERE p.deleted_at IS NULL AND CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END = ?
 	`
 	countQuery := `
 		SELECT COUNT(*)
 		FROM posts p
 		LEFT JOIN users u ON u.id = p.author_id
-		WHERE p.deleted_at IS NULL AND COALESCE(u.username, '') = ?
+		WHERE p.deleted_at IS NULL AND CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END = ?
 	`
 
 	args := []any{authorUsername}
@@ -295,7 +295,7 @@ func (r *BlogRepository) ListByAuthor(page, pageSize int, authorUsername, status
 	query += `
 		GROUP BY
 			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
-			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			pc.content_markdown, u.id, u.username, u.status, p.status, p.is_top, p.created_at, p.updated_at,
 			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count
 		ORDER BY p.updated_at DESC, p.id DESC
 		LIMIT ? OFFSET ?
@@ -331,7 +331,7 @@ func (r *BlogRepository) ListFavoritesByUser(page, pageSize int, username string
 		FROM post_favorites pf
 		INNER JOIN users fav_u ON fav_u.id = pf.user_id
 		INNER JOIN posts p ON p.id = pf.post_id
-		WHERE fav_u.username = ? AND fav_u.deleted_at IS NULL
+		WHERE fav_u.username = ? AND fav_u.deleted_at IS NULL AND fav_u.status <> 'deleted'
 			AND p.deleted_at IS NULL AND p.status = 'published'
 	`
 	listQuery := `
@@ -345,7 +345,7 @@ func (r *BlogRepository) ListFavoritesByUser(page, pageSize int, username string
 			COALESCE(p.slug, ''),
 			COALESCE(p.summary, ''),
 			COALESCE(pc.content_markdown, ''),
-			COALESCE(u.username, ''),
+			CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END,
 			p.status,
 			p.is_top,
 			p.created_at,
@@ -365,11 +365,11 @@ func (r *BlogRepository) ListFavoritesByUser(page, pageSize int, username string
 		LEFT JOIN post_stats ps ON ps.post_id = p.id
 		LEFT JOIN post_tags pt ON pt.post_id = p.id
 		LEFT JOIN tags t ON t.id = pt.tag_id
-		WHERE fav_u.username = ? AND fav_u.deleted_at IS NULL
+		WHERE fav_u.username = ? AND fav_u.deleted_at IS NULL AND fav_u.status <> 'deleted'
 			AND p.deleted_at IS NULL AND p.status = 'published'
 		GROUP BY
 			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
-			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			pc.content_markdown, u.id, u.username, u.status, p.status, p.is_top, p.created_at, p.updated_at,
 			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count, pf.created_at
 		ORDER BY pf.created_at DESC, p.id DESC
 		LIMIT ? OFFSET ?
@@ -409,7 +409,7 @@ func (r *BlogRepository) ListLikesByUser(page, pageSize int, username string) (*
 		FROM post_likes pl
 		INNER JOIN users liked_u ON liked_u.id = pl.user_id
 		INNER JOIN posts p ON p.id = pl.post_id
-		WHERE liked_u.username = ? AND liked_u.deleted_at IS NULL
+		WHERE liked_u.username = ? AND liked_u.deleted_at IS NULL AND liked_u.status <> 'deleted'
 			AND p.deleted_at IS NULL AND p.status = 'published'
 	`
 	listQuery := `
@@ -423,7 +423,7 @@ func (r *BlogRepository) ListLikesByUser(page, pageSize int, username string) (*
 			COALESCE(p.slug, ''),
 			COALESCE(p.summary, ''),
 			COALESCE(pc.content_markdown, ''),
-			COALESCE(u.username, ''),
+			CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END,
 			p.status,
 			p.is_top,
 			p.created_at,
@@ -443,11 +443,11 @@ func (r *BlogRepository) ListLikesByUser(page, pageSize int, username string) (*
 		LEFT JOIN post_stats ps ON ps.post_id = p.id
 		LEFT JOIN post_tags pt ON pt.post_id = p.id
 		LEFT JOIN tags t ON t.id = pt.tag_id
-		WHERE liked_u.username = ? AND liked_u.deleted_at IS NULL
+		WHERE liked_u.username = ? AND liked_u.deleted_at IS NULL AND liked_u.status <> 'deleted'
 			AND p.deleted_at IS NULL AND p.status = 'published'
 		GROUP BY
 			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
-			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			pc.content_markdown, u.id, u.username, u.status, p.status, p.is_top, p.created_at, p.updated_at,
 			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count, pl.created_at
 		ORDER BY pl.created_at DESC, p.id DESC
 		LIMIT ? OFFSET ?
@@ -477,7 +477,7 @@ func (r *BlogRepository) ListLikesByUser(page, pageSize int, username string) (*
 	}, nil
 }
 
-// GetByID 按文。ID 读取博客详情。
+// GetByID 按文章 ID 读取博客详情。
 func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
 	rows, err := r.db.Raw(`
 		SELECT
@@ -490,7 +490,7 @@ func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
 			COALESCE(p.slug, ''),
 			COALESCE(p.summary, ''),
 			COALESCE(pc.content_markdown, ''),
-			COALESCE(u.username, ''),
+			CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END,
 			p.status,
 			p.is_top,
 			p.created_at,
@@ -511,7 +511,7 @@ func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
 		WHERE p.id = ? AND p.deleted_at IS NULL
 		GROUP BY
 			p.id, p.author_id, p.category_id, c.name, c.slug, p.title, p.slug, p.summary,
-			pc.content_markdown, u.username, p.status, p.is_top, p.created_at, p.updated_at,
+			pc.content_markdown, u.id, u.username, u.status, p.status, p.is_top, p.created_at, p.updated_at,
 			p.published_at, ps.view_count, ps.like_count, ps.favorite_count, ps.comment_count
 	`, blogID).Rows()
 	if err != nil {
@@ -529,11 +529,11 @@ func (r *BlogRepository) GetByID(blogID int64) (*model.Blog, error) {
 	return &blogs[0], nil
 }
 
-// GetAuthorByID 按文。ID 读取作者用户名。
+// GetAuthorByID 按文章 ID 读取作者用户名。
 func (r *BlogRepository) GetAuthorByID(blogID int64) (string, error) {
 	var authorUsername string
 	err := r.db.Raw(`
-		SELECT COALESCE(u.username, '')
+		SELECT CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END
 		FROM posts p
 		LEFT JOIN users u ON u.id = p.author_id
 		WHERE p.id = ? AND p.deleted_at IS NULL

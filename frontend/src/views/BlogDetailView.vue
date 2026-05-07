@@ -1,4 +1,4 @@
-﻿<template>
+<template>
   <section class="page-block blog-detail-page">
     <div v-if="loading" class="empty-state">
       <h3>正在加载博客详情</h3>
@@ -49,12 +49,21 @@
         <p v-if="message" :class="success ? 'feedback success' : 'feedback error'">{{ message }}</p>
       </article>
       <section class="comment-card">
-        <div class="comment-header"><div><h2>评论</h2><p>{{ comments.length }} 条评论</p></div></div>
+        <div class="comment-header">
+          <div>
+            <h2>评论</h2>
+            <p>{{ commentTotal }} 条评论</p>
+          </div>
+        </div>
         <div class="comment-editor">
-          <textarea v-model="commentContent" class="comment-textarea" rows="4" maxlength="500" :disabled="submittingComment || !store.user.isLogin" placeholder="写下你的想法，最多 500 字" />
+          <div v-if="replyTarget" class="replying-bar">
+            <span>正在回复 @{{ replyTarget.username }}</span>
+            <button type="button" @click="clearReplyTarget">取消回复</button>
+          </div>
+          <textarea v-model="commentContent" class="comment-textarea" rows="4" maxlength="500" :disabled="submittingComment || !store.user.isLogin" :placeholder="commentPlaceholder" />
           <div class="comment-editor-footer">
             <span class="comment-tip">{{ store.user.isLogin ? '还可以输入 ' + commentRemaining + ' 字' : '登录后可发表评论' }}</span>
-            <button type="button" class="comment-submit-btn" :disabled="!canSubmitComment" @click="handleCreateComment">{{ submittingComment ? '发布中...' : '发表评论' }}</button>
+            <button type="button" class="comment-submit-btn" :disabled="!canSubmitComment" @click="handleCreateComment">{{ submittingComment ? '发布中...' : (replyTarget ? '发表回复' : '发表评论') }}</button>
           </div>
           <p v-if="commentMessage" :class="commentSuccess ? 'feedback success' : 'feedback error'">{{ commentMessage }}</p>
         </div>
@@ -64,10 +73,29 @@
           <article v-for="item in comments" :key="item.id" class="comment-item">
             <div class="comment-item-head">
               <div><strong class="comment-name">{{ item.displayName || item.username }}</strong><span v-if="item.username" class="comment-username">@{{ item.username }}</span></div>
-              <button v-if="canDeleteComment(item)" type="button" class="comment-delete-btn" :disabled="deletingCommentId === item.id" @click="handleDeleteComment(item)">{{ deletingCommentId === item.id ? '删除中...' : '删除' }}</button>
+              <div class="comment-actions">
+                <button v-if="store.user.isLogin" type="button" class="reply-btn" @click="handleStartReply(item)">回复</button>
+                <button v-if="canDeleteComment(item)" type="button" class="comment-delete-btn" :disabled="deletingCommentId === item.id" @click="handleDeleteComment(item)">{{ deletingCommentId === item.id ? '删除中...' : '删除' }}</button>
+              </div>
             </div>
             <div class="comment-time">{{ formatCommentTime(item.createdAt) }}</div>
             <p class="comment-content">{{ item.content }}</p>
+            <div v-if="item.replies.length" class="comment-replies">
+              <article v-for="reply in item.replies" :key="reply.id" class="comment-reply-item">
+                <div class="comment-item-head">
+                  <div><strong class="comment-name">{{ reply.displayName || reply.username }}</strong><span v-if="reply.username" class="comment-username">@{{ reply.username }}</span></div>
+                  <div class="comment-actions">
+                    <button v-if="store.user.isLogin" type="button" class="reply-btn" @click="handleStartReply(reply)">回复</button>
+                    <button v-if="canDeleteComment(reply)" type="button" class="comment-delete-btn" :disabled="deletingCommentId === reply.id" @click="handleDeleteComment(reply)">{{ deletingCommentId === reply.id ? '删除中...' : '删除' }}</button>
+                  </div>
+                </div>
+                <div class="comment-time">
+                  <span>{{ formatCommentTime(reply.createdAt) }}</span>
+                  <span v-if="reply.replyToUsername"> · 回复 @{{ reply.replyToUsername }}</span>
+                </div>
+                <p class="comment-content">{{ reply.content }}</p>
+              </article>
+            </div>
           </article>
         </div>
       </section>
@@ -105,6 +133,7 @@ const deletingCommentId = ref(0)
 const blog = ref(null)
 const comments = ref([])
 const commentContent = ref('')
+const replyTarget = ref(null)
 const message = ref('')
 const commentMessage = ref('')
 const success = ref(false)
@@ -117,6 +146,16 @@ const canManageAllBlogs = computed(
 )
 const renderedContent = computed(() => renderMarkdown(blog.value?.content || ''))
 const commentRemaining = computed(() => Math.max(0, 500 - commentContent.value.length))
+const commentTotal = computed(() => comments.value.reduce((total, item) => total + 1 + item.replies.length, 0))
+const commentPlaceholder = computed(() => {
+  if (!store.user.isLogin) {
+    return '登录后可发表评论'
+  }
+  if (replyTarget.value) {
+    return `回复 @${replyTarget.value.username}，最多 500 字`
+  }
+  return '写下你的想法，最多 500 字'
+})
 const canSubmitComment = computed(
   () => Boolean(store.user.isLogin && commentContent.value.trim() && !submittingComment.value)
 )
@@ -144,14 +183,19 @@ function normalizeBlog(data = {}) {
 }
 
 function normalizeComment(data = {}) {
+  const replies = data.replies ?? data.Replies ?? []
   return {
     id: data.id ?? data.ID ?? 0,
     postId: data.postId ?? data.PostID ?? 0,
     userId: data.userId ?? data.UserID ?? 0,
+    parentId: data.parentId ?? data.ParentID ?? null,
+    rootId: data.rootId ?? data.RootID ?? null,
     username: data.username ?? data.Username ?? '',
     displayName: data.displayName ?? data.DisplayName ?? '',
+    replyToUsername: data.replyToUsername ?? data.ReplyToUsername ?? '',
     content: data.content ?? data.Content ?? '',
-    createdAt: data.createdAt ?? data.CreatedAt ?? ''
+    createdAt: data.createdAt ?? data.CreatedAt ?? '',
+    replies: Array.isArray(replies) ? replies.map(normalizeComment) : []
   }
 }
 
@@ -284,7 +328,7 @@ async function loadComments() {
   try {
     const data = await getCommentsByBlogId(blog.value.id)
     comments.value = Array.isArray(data.items) ? data.items.map(normalizeComment) : []
-    blog.value.stats.commentCount = comments.value.length
+    blog.value.stats.commentCount = commentTotal.value
   } catch (error) {
     comments.value = []
     if (!commentMessage.value) {
@@ -400,11 +444,13 @@ async function handleCreateComment() {
 
   try {
     await createComment(blog.value.id, {
-      content: commentContent.value.trim()
+      content: commentContent.value.trim(),
+      parentId: replyTarget.value?.id || 0
     })
     commentSuccess.value = true
-    commentMessage.value = '评论发布成功'
+    commentMessage.value = replyTarget.value ? '回复发布成功' : '评论发布成功'
     commentContent.value = ''
+    clearReplyTarget()
     await loadComments()
   } catch (error) {
     commentSuccess.value = false
@@ -412,6 +458,20 @@ async function handleCreateComment() {
   } finally {
     submittingComment.value = false
   }
+}
+
+function handleStartReply(comment) {
+  if (!store.user.isLogin) {
+    commentSuccess.value = false
+    commentMessage.value = '登录后可回复评论'
+    return
+  }
+  replyTarget.value = comment
+  commentMessage.value = ''
+}
+
+function clearReplyTarget() {
+  replyTarget.value = null
 }
 
 function canDeleteComment(comment) {
@@ -438,6 +498,9 @@ async function handleDeleteComment(comment) {
     await deleteComment(comment.id)
     commentSuccess.value = true
     commentMessage.value = '评论已删除'
+    if (replyTarget.value?.id === comment.id) {
+      clearReplyTarget()
+    }
     await loadComments()
   } catch (error) {
     commentSuccess.value = false
@@ -567,7 +630,8 @@ function formatCommentTime(value) {
 .delete-btn,
 .action-btn,
 .comment-submit-btn,
-.comment-delete-btn {
+.comment-delete-btn,
+.reply-btn {
   border: none;
   border-radius: 14px;
   padding: 10px 14px;
@@ -578,7 +642,8 @@ function formatCommentTime(value) {
 
 .edit-btn,
 .comment-submit-btn,
-.action-btn {
+.action-btn,
+.reply-btn {
   background: #203040;
 }
 
@@ -677,6 +742,28 @@ function formatCommentTime(value) {
   gap: 14px;
 }
 
+.replying-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  border-radius: 14px;
+  background: rgba(156, 106, 67, 0.12);
+  color: #7b5427;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.replying-bar button {
+  border: none;
+  background: transparent;
+  color: #9c6a43;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
 .comment-item {
   display: grid;
   gap: 8px;
@@ -690,6 +777,12 @@ function formatCommentTime(value) {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.comment-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .comment-name {
@@ -709,6 +802,22 @@ function formatCommentTime(value) {
   word-break: break-word;
 }
 
+.comment-replies {
+  display: grid;
+  gap: 10px;
+  margin-top: 8px;
+  padding-left: 18px;
+  border-left: 3px solid rgba(156, 106, 67, 0.18);
+}
+
+.comment-reply-item {
+  display: grid;
+  gap: 8px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
 .comment-empty {
   padding: 18px 20px;
   border-radius: 18px;
@@ -721,7 +830,8 @@ function formatCommentTime(value) {
   .detail-actions,
   .interaction-row,
   .comment-editor-footer,
-  .comment-item-head {
+  .comment-item-head,
+  .replying-bar {
     flex-direction: column;
     align-items: stretch;
   }

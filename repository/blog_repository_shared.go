@@ -1,5 +1,6 @@
-﻿/*
-blog_repository_shared.go 。。。岩。Ͳִ。。ṹ。Լ。。。ѯ。。。。ǩ。。Markdown 。。。。ȹ。。。。。。。。߼。。。*/
+/*
+定义博客仓储结构以及查询、标签、Markdown 处理等公共辅助逻辑。
+*/
 package repository
 
 import (
@@ -39,7 +40,7 @@ func buildBlogListFilters(keyword string, categoryID int64, archive string) (lis
 				p.title LIKE ?
 				OR COALESCE(p.summary, '') LIKE ?
 				OR COALESCE(pc.content_text, pc.content_markdown, '') LIKE ?
-				OR COALESCE(u.username, '') LIKE ?
+				OR CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE u.username END LIKE ?
 				OR EXISTS (
 					SELECT 1
 					FROM post_tags pt2
@@ -262,7 +263,7 @@ func hasInteraction(db *gorm.DB, table string, blogID int64, username string) (b
 		SELECT 1
 		FROM %s pi
 		INNER JOIN users u ON u.id = pi.user_id
-		WHERE pi.post_id = ? AND u.username = ? AND u.deleted_at IS NULL
+		WHERE pi.post_id = ? AND u.username = ? AND u.deleted_at IS NULL AND u.status <> 'deleted'
 	`, table), blogID, username).Row().Scan(&exists)
 	if err != nil {
 		if err == sql.ErrNoRows {

@@ -1,5 +1,5 @@
 /*
-blog_service.go 负责博客、分类、标签、归档和互动相关业务逻辑。
+负责博客、分类、标签、归档和互动相关业务逻辑。
 */
 package service
 
@@ -290,7 +290,13 @@ func (s *BlogService) DeleteBlog(blogID int64, currentUsername, currentPermissio
 		return errors.New("only the author can delete this blog")
 	}
 
-	return s.blogRepo.Delete(blogID)
+	if err := s.blogRepo.Delete(blogID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return errors.New("blog not found")
+		}
+		return err
+	}
+	return nil
 }
 
 // ListCategories 返回分类列表。

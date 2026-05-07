@@ -1,5 +1,5 @@
-﻿/*
-blog_service_test.go 覆盖博客服务的核心业务测试。
+/*
+覆盖博客服务的核心业务测试。
 */
 package service
 
@@ -257,7 +257,7 @@ func TestBlogServiceCreateBlogBuildsSlugSummaryStatusAndTags(t *testing.T) {
 	}
 }
 
-// TestBlogServiceUpdateBlogRequiresAuthorOrAdmin 。。֤。。。²。。。。。Ҫ。。。߻。。。。ԱȨ。ޡ。
+// TestBlogServiceUpdateBlogRequiresAuthorOrAdmin 验证更新博客需要作者或管理员权限。
 func TestBlogServiceUpdateBlogRequiresAuthorOrAdmin(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog: &model.Blog{ID: 1, Title: "Old", Content: "Old", AuthorUsername: "alice", Status: "draft"},
@@ -277,7 +277,7 @@ func TestBlogServiceUpdateBlogRequiresAuthorOrAdmin(t *testing.T) {
 	}
 }
 
-// TestBlogServiceUpdateBlogAllowsPublishAndTopForManager 。。֤。。。。Ա。ɷ。。。。。。ö。。。。͡。
+// TestBlogServiceUpdateBlogAllowsPublishAndTopForManager 验证管理员可发布并置顶博客。
 func TestBlogServiceUpdateBlogAllowsPublishAndTopForManager(t *testing.T) {
 	repo := &fakeBlogRepo{
 		blog: &model.Blog{ID: 2, Title: "Old", Content: "Old", AuthorUsername: "alice", Status: "draft"},
@@ -342,7 +342,7 @@ func TestBlogServiceGetBlogByIDForUserLoadsInteractionState(t *testing.T) {
 	}
 }
 
-// TestBlogServiceDeleteBlogRequiresAuthorOrAdmin 。。֤ɾ。。。。。。。。Ҫ。。。߻。。。。ԱȨ。ޡ。
+// TestBlogServiceDeleteBlogRequiresAuthorOrAdmin 验证删除博客需要作者或管理员权限。
 func TestBlogServiceDeleteBlogRequiresAuthorOrAdmin(t *testing.T) {
 	repo := &fakeBlogRepo{author: "alice"}
 	service := NewBlogService(repo)
@@ -375,7 +375,7 @@ func TestBlogServiceListBlogsNormalizesPaginationAndFilters(t *testing.T) {
 	}
 }
 
-// TestBlogServiceListManagedBlogsRequiresManagerPermission 。。֤。。̨。。。。。б。。。Ҫ。。。。Ȩ。ޡ。
+// TestBlogServiceListManagedBlogsRequiresManagerPermission 验证后台博客列表需要管理权限。
 func TestBlogServiceListManagedBlogsRequiresManagerPermission(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)
@@ -483,7 +483,7 @@ func TestBlogServiceToggleFavoriteReturnsCounts(t *testing.T) {
 	}
 }
 
-// TestBlogServiceCategoryManagementRequiresManager 。。֤。。。。。。。。。Ҫ。。。。Ȩ。ޡ。
+// TestBlogServiceCategoryManagementRequiresManager 验证分类管理需要管理权限。
 func TestBlogServiceCategoryManagementRequiresManager(t *testing.T) {
 	repo := &fakeBlogRepo{}
 	service := NewBlogService(repo)

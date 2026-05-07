@@ -1,5 +1,6 @@
-﻿/*
-config.go 负责从环境变量和 .env 文件加载运行配置。*/
+/*
+负责从环境变量和 .env 文件加载运行配置。
+*/
 package config
 
 import (

@@ -9,7 +9,7 @@
       <div class="upload-layout">
         <div class="upload-card">
           <h2>上传头像</h2>
-          <p class="upload-desc">支持 png、jpg、jpeg、gif 图片，上传后会保存到 frontend/img 目录。</p>
+          <p class="upload-desc">支持 PNG、JPG、JPEG、GIF 图片，文件不超过 512KB，尺寸不超过 1024×1024。</p>
 
           <div class="avatar-preview">
             <img v-if="previewImage" :src="previewImage" class="avatar-large" :alt="displayNameForView" />
@@ -20,7 +20,7 @@
 
           <label class="upload-field">
             <span>选择图片</span>
-            <input type="file" accept=".png,.jpg,.jpeg,.gif,image/png,image/jpeg,image/gif" @change="handleFileChange" />
+            <input ref="fileInput" type="file" accept=".png,.jpg,.jpeg,.gif,image/png,image/jpeg,image/gif" @change="handleFileChange" />
           </label>
 
           <p class="upload-name" v-if="selectedFile">{{ selectedFile.name }}</p>
@@ -50,9 +50,12 @@
 /*
 	这个页面负责上传并更新当前用户头像。
 */
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { appStore as store, refreshCurrentUser, uploadAvatarAndSync } from '../store/appStore'
+
+const MAX_AVATAR_SIZE = 512 * 1024
+const ALLOWED_AVATAR_TYPES = new Set(['image/png', 'image/jpeg', 'image/gif'])
 
 const router = useRouter()
 const ready = ref(false)
@@ -61,6 +64,7 @@ const selectedFile = ref(null)
 const previewUrl = ref('')
 const message = ref('')
 const success = ref(false)
+const fileInput = ref(null)
 
 const user = computed(() => store.user)
 const displayNameForView = computed(() => user.value.displayName || user.value.userName || '用户')
@@ -76,16 +80,29 @@ onMounted(async () => {
   }
 })
 
+onBeforeUnmount(() => {
+  revokePreviewUrl()
+})
+
 function handleFileChange(event) {
   const [file] = event.target.files || []
-  selectedFile.value = file || null
-  message.value = ''
+  resetSelectedFile()
 
   if (!file) {
-    previewUrl.value = ''
     return
   }
 
+  if (!ALLOWED_AVATAR_TYPES.has(file.type)) {
+    message.value = '头像仅支持 PNG、JPG、JPEG、GIF 格式'
+    return
+  }
+
+  if (file.size > MAX_AVATAR_SIZE) {
+    message.value = '头像文件不能超过 512KB'
+    return
+  }
+
+  selectedFile.value = file
   previewUrl.value = URL.createObjectURL(file)
 }
 
@@ -107,10 +124,42 @@ async function handleUpload() {
     }, 1000)
   } catch (error) {
     success.value = false
-    message.value = error.message
+    message.value = avatarErrorText(error.message)
   } finally {
     uploading.value = false
   }
+}
+
+function resetSelectedFile() {
+  selectedFile.value = null
+  success.value = false
+  message.value = ''
+  revokePreviewUrl()
+
+  if (fileInput.value) {
+    fileInput.value.value = ''
+  }
+}
+
+function revokePreviewUrl() {
+  if (previewUrl.value) {
+    URL.revokeObjectURL(previewUrl.value)
+    previewUrl.value = ''
+  }
+}
+
+function avatarErrorText(rawMessage) {
+  const errorMap = {
+    'avatar file cannot be larger than 512 KB': '头像文件不能超过 512KB',
+    'avatar image dimensions cannot exceed 1024x1024': '头像尺寸不能超过 1024×1024',
+    'only png jpg jpeg gif images are allowed': '头像仅支持 PNG、JPG、JPEG、GIF 格式',
+    'file type does not match the allowed image format': '文件内容与图片格式不匹配',
+    'failed to read avatar image': '无法读取头像图片，请换一张图片重试',
+    'avatar file is required': '请选择头像图片',
+    unauthorized: '登录状态已失效，请重新登录'
+  }
+
+  return errorMap[rawMessage] || rawMessage || '头像上传失败，请稍后重试'
 }
 </script>
 
@@ -189,5 +238,3 @@ async function handleUpload() {
   opacity: 0.72;
 }
 </style>
-
-

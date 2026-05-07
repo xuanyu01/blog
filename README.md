@@ -1,25 +1,25 @@
 # Blog
 
-这是一个基于 `Gin + MySQL + Redis + Vue` 的博客项目。
+这是一个基于 `Gin + Gorm + MySQL + Redis + Vue` 的博客项目。
 当前项目已经支持注册、登录、Session、博客增删改查、分页搜索，以及基础后台用户管理。
 
 ## 目录结构
 
 ```text
 .
-├── app
-├── config
-├── docs
-├── frontend
-├── http
-├── migrations
-├── model
-├── repository
-├── service
-├── session
-├── store
+├── /app
+├── /config
+├── /docs
+├── /frontend
+├── /http
+├── /migrations
+├── /model
+├── /repository
+├── /service
+├── /session
+├── /store
 ├── .env.example
-├── ai.sql
+├── data.sql
 ├── main.go
 └── README.md
 ```
@@ -30,12 +30,15 @@
 以下配置为必填或常用配置：
 
 ```env
-APP_ADDR=:5345
-MYSQL_DSN=blog:123456@tcp(127.0.0.1:3306)/blog?charset=utf8mb4&parseTime=true&loc=Local
-REDIS_ADDR=127.0.0.1:6379
-REDIS_PASSWORD=
-REDIS_DB=0
-SESSION_EXPIRE_MINUTES=60
+APP_ADDR=''
+MYSQL_DSN=''
+REDIS_ADDR=''
+REDIS_PASSWORD=''
+REDIS_DB=
+SESSION_EXPIRE_MINUTES=
+LOGIN_RATE_LIMIT_MAX_ATTEMPTS=5
+LOGIN_RATE_LIMIT_WINDOW_MINUTES=10
+LOGIN_RATE_LIMIT_BLOCK_MINUTES=15
 ```
 
 你可以直接从示例文件复制：
@@ -48,28 +51,15 @@ Copy-Item .\.env.example .\.env
 
 ## 数据库初始化
 
-### 方式一：直接用完整结构脚本重建
+### 一次性执行 data.sql
 
-`ai.sql` 会直接重建整个 `blog` 库，适合本地全新初始化。
-
-```powershell
-mysql -u blog -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 < .\ai.sql
-```
-
-### 方式二：按 migrations 逐步执行
-
-如果你更希望按版本执行初始化，可以按顺序运行 `migrations` 目录中的脚本：
+`data.sql` 可以直接执行：
 
 ```powershell
-mysql -u blog -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 < .\migrations\001_create_database.sql
-mysql -u blog -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 < .\migrations\002_create_users_and_categories.sql
-mysql -u blog -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 < .\migrations\003_create_posts.sql
-mysql -u blog -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 < .\migrations\004_create_engagement.sql
-mysql -u blog -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 < .\migrations\005_seed_data.sql
+mysql -u username -p -h 127.0.0.1 -P 3306 --default-character-set=utf8mb4 < .\data.sql
 ```
 
-`005_seed_data.sql` 会插入一条默认管理员数据：
-
+`data.sql` 会插入一条默认管理员数据：
 - 用户名：`admin`
 - 密码：`admin123`
 

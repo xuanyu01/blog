@@ -1,26 +1,28 @@
-﻿/*
-user.go 定义用户、用户视图和资料更新相关模型。
+/*
+定义用户、用户视图和资料更新相关模型。
 */
 package model
 
 // User 表示数据库中的用户记录。
 type User struct {
-	ID          int64
-	Username    string
-	DisplayName string
-	Image       string
-	Permission  string
-	Status      string
+	ID                 int64
+	Username           string
+	DisplayName        string
+	Image              string
+	Permission         string
+	Status             string
+	MustChangePassword bool
 }
 
 // UserView 表示前端使用的用户信息。
 type UserView struct {
-	ID          int64  `json:"id"`
-	UserName    string `json:"userName"`
-	DisplayName string `json:"displayName"`
-	ImageRoute  string `json:"imageRoute"`
-	Permission  string `json:"permission"`
-	IsLogin     bool   `json:"isLogin"`
+	ID                 int64  `json:"id"`
+	UserName           string `json:"userName"`
+	DisplayName        string `json:"displayName"`
+	ImageRoute         string `json:"imageRoute"`
+	Permission         string `json:"permission"`
+	IsLogin            bool   `json:"isLogin"`
+	MustChangePassword bool   `json:"mustChangePassword"`
 }
 
 // UserProfileUpdate 表示资料修改请求。

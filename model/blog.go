@@ -1,5 +1,5 @@
-﻿/*
-blog.go 定义博客、分类、标签、归档和互动相关模型。
+/*
+定义博客、分类、标签、归档和互动相关模型。
 */
 package model
 
@@ -112,4 +112,3 @@ type ArchiveItem struct {
 	Month   int    `json:"month"`
 	Count   int64  `json:"count"`
 }
-

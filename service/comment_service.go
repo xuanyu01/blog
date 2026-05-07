@@ -1,5 +1,6 @@
-﻿/*
-comment_service.go 负责评论相关业务逻辑。*/
+/*
+处理评论相关的业务逻辑。
+*/
 package service
 
 import (
@@ -9,7 +10,7 @@ import (
 	"strings"
 )
 
-// CommentService 负责评论业务编排。
+// CommentService 协调评论相关的业务逻辑。
 type CommentService struct {
 	commentRepo commentRepository
 	blogRepo    commentBlogRepository
@@ -17,7 +18,7 @@ type CommentService struct {
 
 type commentRepository interface {
 	ListByPostID(postID int64) ([]model.Comment, error)
-	Create(postID int64, username, content string) (*model.Comment, error)
+	Create(postID int64, parentID int64, username, content string) (*model.Comment, error)
 	GetAuthorByID(commentID int64) (string, error)
 	Delete(commentID int64) error
 }
@@ -34,7 +35,7 @@ func NewCommentService(commentRepo commentRepository, blogRepo commentBlogReposi
 	}
 }
 
-// ListComments 返回当前用户可见文章下的一级评论。
+// ListComments 返回当前用户可见的评论列表。
 func (s *CommentService) ListComments(postID int64, currentUsername, currentPermission string) ([]model.Comment, error) {
 	if _, err := s.getAccessibleBlog(postID, currentUsername, currentPermission); err != nil {
 		return nil, err
@@ -42,11 +43,14 @@ func (s *CommentService) ListComments(postID int64, currentUsername, currentPerm
 	return s.commentRepo.ListByPostID(postID)
 }
 
-// CreateComment 创建一级评论。
-func (s *CommentService) CreateComment(postID int64, content, currentUsername, currentPermission string) (*model.Comment, error) {
+// CreateComment 创建一级评论或回复。
+func (s *CommentService) CreateComment(postID int64, parentID int64, content, currentUsername, currentPermission string) (*model.Comment, error) {
 	currentUsername = strings.TrimSpace(currentUsername)
 	if currentUsername == "" {
 		return nil, errors.New("unauthorized")
+	}
+	if parentID < 0 {
+		return nil, errors.New("invalid parent comment id")
 	}
 
 	if _, err := s.getAccessibleBlog(postID, currentUsername, currentPermission); err != nil {
@@ -61,10 +65,20 @@ func (s *CommentService) CreateComment(postID int64, content, currentUsername, c
 		return nil, errors.New("content cannot be longer than 500 characters")
 	}
 
-	return s.commentRepo.Create(postID, currentUsername, content)
+	comment, err := s.commentRepo.Create(postID, parentID, currentUsername, content)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("parent comment not found")
+		}
+		if err.Error() == "parent comment does not belong to this blog" {
+			return nil, errors.New("parent comment not found")
+		}
+		return nil, err
+	}
+	return comment, nil
 }
 
-// DeleteComment ɾ。。。Լ。。。。ۣ。。。。。Ա。。ɾ。。。。。。。。。ۡ。
+// DeleteComment 删除当前用户自己的评论，管理员可以删除任意评论。
 func (s *CommentService) DeleteComment(commentID int64, currentUsername, currentPermission string) error {
 	currentUsername = strings.TrimSpace(currentUsername)
 	currentPermission = strings.TrimSpace(currentPermission)
@@ -112,4 +126,3 @@ func (s *CommentService) getAccessibleBlog(postID int64, currentUsername, curren
 
 	return blog, nil
 }
-

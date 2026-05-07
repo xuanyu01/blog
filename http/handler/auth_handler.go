@@ -1,5 +1,6 @@
-﻿/*
-auth_handler.go 。。。。ע。ᡢ。。¼。。。ǳ。。。。û。。。。。。。ؽӿڡ。*/
+/*
+处理注册、登录、登出和用户资料相关接口。
+*/
 package handler
 
 import (
@@ -17,7 +18,7 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// Register 。。。。ע。。。。。。
+// Register 处理注册请求。
 func (h *WebHandler) Register(c *gin.Context) {
 	username := c.PostForm("username")
 	password := c.PostForm("password")
@@ -41,12 +42,13 @@ func (h *WebHandler) Register(c *gin.Context) {
 	})
 }
 
-// Login 。。。。。¼。。。。
+// Login 处理登录请求。
 func (h *WebHandler) Login(c *gin.Context) {
 	username := strings.TrimSpace(c.PostForm("username"))
 	password := c.PostForm("password")
 	loginLimitKey := buildLoginLimitKey(c.ClientIP(), username)
 
+	// 登录限流检查
 	if retryAfter, err := h.loginLimiter.Check(loginLimitKey); err != nil {
 		log.Println("login rate limit check failed:", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
@@ -61,6 +63,7 @@ func (h *WebHandler) Login(c *gin.Context) {
 		return
 	}
 
+	// 校验用户名和密码并创建会话
 	sessionID, err := h.authService.Login(username, password)
 	if err != nil {
 		status := http.StatusBadRequest
@@ -124,7 +127,7 @@ func (h *WebHandler) CurrentUser(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
-// UpdateProfile 。。。。。û。。。。。。޸。。。。。
+// UpdateProfile 处理用户资料修改请求。
 func (h *WebHandler) UpdateProfile(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
@@ -157,10 +160,19 @@ func (h *WebHandler) UpdateProfile(c *gin.Context) {
 	c.JSON(http.StatusOK, user)
 }
 
-// UploadAvatar 。。。。ͷ。。。ϴ。。。。。
+// UploadAvatar 处理头像上传请求。
 func (h *WebHandler) UploadAvatar(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"message": "unauthorized",
+		})
+		return
+	}
+
+	// 获取oldUser信息
+	oldUser, err := h.authService.CurrentUser(sessionID)
+	if err != nil || !oldUser.IsLogin {
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"message": "unauthorized",
 		})
@@ -183,18 +195,29 @@ func (h *WebHandler) UploadAvatar(c *gin.Context) {
 		return
 	}
 
+	// 更新用户头像
 	user, err := h.authService.UpdateAvatar(sessionID, fileName)
 	if err != nil {
+		if deleteErr := deleteAvatarFile(fileName); deleteErr != nil {
+			log.Println("delete new avatar after update failed:", deleteErr)
+		}
 		c.JSON(http.StatusBadRequest, gin.H{
 			"message": err.Error(),
 		})
 		return
 	}
 
+	// 删除旧头像文件（如果有且已更换）
+	if oldUser.ImageRoute != "" && oldUser.ImageRoute != user.ImageRoute {
+		if deleteErr := deleteAvatarFile(oldUser.ImageRoute); deleteErr != nil {
+			log.Println("delete old avatar failed:", deleteErr)
+		}
+	}
+
 	c.JSON(http.StatusOK, user)
 }
 
-// UpdatePassword 。。。。。。。。。޸。。。。。
+// UpdatePassword 处理密码修改请求。
 func (h *WebHandler) UpdatePassword(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
@@ -228,7 +251,7 @@ func (h *WebHandler) UpdatePassword(c *gin.Context) {
 	})
 }
 
-// UpdateUserPermission 。。。。Ȩ。。。޸。。。。。
+// UpdateUserPermission 处理权限修改请求。
 func (h *WebHandler) UpdateUserPermission(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
@@ -238,6 +261,7 @@ func (h *WebHandler) UpdateUserPermission(c *gin.Context) {
 		return
 	}
 
+	// 解析请求体
 	var payload model.UserPermissionUpdate
 	if err := c.ShouldBindJSON(&payload); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -246,6 +270,7 @@ func (h *WebHandler) UpdateUserPermission(c *gin.Context) {
 		return
 	}
 
+	// 更新用户权限
 	if err := h.authService.UpdateUserPermission(sessionID, payload); err != nil {
 		status := http.StatusBadRequest
 		switch err.Error() {
@@ -305,7 +330,7 @@ func (h *WebHandler) ListUsers(c *gin.Context) {
 	})
 }
 
-// DeleteUser 。。。。。û。ɾ。。。。。。
+// DeleteUser 处理用户删除请求。
 func (h *WebHandler) DeleteUser(c *gin.Context) {
 	sessionID, err := c.Cookie(session.CookieName)
 	if err != nil {
@@ -353,4 +378,3 @@ func buildLoginLimitKey(ip, username string) string {
 	hash := sha256.Sum256([]byte(raw))
 	return hex.EncodeToString(hash[:])
 }
-

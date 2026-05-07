@@ -7,6 +7,8 @@ import LoginView from '../views/LoginView.vue'
 import RegisterView from '../views/RegisterView.vue'
 import UserView from '../views/UserView.vue'
 import UserProfileView from '../views/UserProfileView.vue'
+import UserDraftsView from '../views/UserDraftsView.vue'
+import UserFavoritesView from '../views/UserFavoritesView.vue'
 import AdminView from '../views/AdminView.vue'
 import AvatarUploadView from '../views/AvatarUploadView.vue'
 import CreateBlogView from '../views/CreateBlogView.vue'
@@ -23,14 +25,22 @@ function redirectToCurrentUser() {
     params: { id: String(appStore.user.id) }
   }
 }
+
+function passwordChangeRoute() {
+  return {
+    name: 'user-edit',
+    params: { id: String(appStore.user.id) },
+    query: { forcePassword: '1' }
+  }
+}
 // routes 描述路径和页面组件的映射关系
 const routes = [
   { path: '/', name: 'home', component: HomeView },
   { path: '/login', name: 'login', component: LoginView, meta: { guestOnly: true } },
   { path: '/register', name: 'register', component: RegisterView, meta: { guestOnly: true } },
   { path: '/user', name: 'user-root', beforeEnter: redirectToCurrentUser, meta: { requiresAuth: true } },
-  { path: '/user/drafts', name: 'user-drafts', beforeEnter: redirectToCurrentUser, meta: { requiresAuth: true } },
-  { path: '/user/favorites', name: 'user-favorites', beforeEnter: redirectToCurrentUser, meta: { requiresAuth: true } },
+  { path: '/user/drafts', name: 'user-drafts', component: UserDraftsView, meta: { requiresAuth: true } },
+  { path: '/user/favorites', name: 'user-favorites', component: UserFavoritesView, meta: { requiresAuth: true } },
   { path: '/user/:id(\\d+)/edit', name: 'user-edit', component: UserView, meta: { requiresAuth: true } },
   { path: '/user/:id(\\d+)', name: 'user-profile', component: UserProfileView, meta: { requiresAuth: true } },
   { path: '/admin', name: 'admin', component: AdminView, meta: { requiresManager: true } },
@@ -60,8 +70,12 @@ router.beforeEach(async (to) => {
     await refreshCurrentUser()
   }
 
+  if (appStore.user.isLogin && appStore.user.mustChangePassword && to.name !== 'user-edit') {
+    return passwordChangeRoute()
+  }
+
   if (to.matched.some((record) => record.meta.guestOnly) && appStore.user.isLogin) {
-    return { name: 'home' }
+    return appStore.user.mustChangePassword ? passwordChangeRoute() : { name: 'home' }
   }
 
   if (to.matched.some((record) => record.meta.requiresAuth) && !appStore.user.isLogin) {

@@ -1,5 +1,5 @@
-﻿/*
-web.go 。ṩǰ。。ҳ。。。。。。。Ĺ。。。 HTTP 。。。。。߼。。͸。。。。。。。。。
+/*
+提供前端页面所需的公共 HTTP 处理逻辑和辅助函数。
 */
 package handler
 
@@ -11,6 +11,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -29,7 +33,13 @@ var allowedAvatarTypes = map[string]string{
 	".gif":  "image/gif",
 }
 
-// WebHandler 。。。𲩿ͺ。。。֤。。ص。 HTTP 。。。。。
+const (
+	maxAvatarFileSize = 512 * 1024
+	maxAvatarWidth    = 1024
+	maxAvatarHeight   = 1024
+)
+
+// WebHandler 聚合博客、评论和认证相关的 HTTP 处理器。
 type WebHandler struct {
 	blogService    *service.BlogService
 	commentService *service.CommentService
@@ -100,10 +110,11 @@ type categoryPayload struct {
 
 // commentCreateRequest 表示评论创建请求体。
 type commentCreateRequest struct {
-	Content string `json:"content"`
+	Content  string `json:"content"`
+	ParentID int64  `json:"parentId"`
 }
 
-// NewWebHandler 。。。。。。。。。。ʵ。。。。
+// NewWebHandler 创建 WebHandler 实例。
 func NewWebHandler(blogService *service.BlogService, commentService *service.CommentService, authService *service.AuthService, loginLimiter loginRateLimiter) *WebHandler {
 	if loginLimiter == nil {
 		loginLimiter = noopLoginRateLimiter{}
@@ -125,14 +136,14 @@ func (h *WebHandler) GetAppState(c *gin.Context) {
 	})
 }
 
-// SubmitGet 。。。。 submit 。。 GET 。。。。
+// SubmitGet 处理 submit 的 GET 请求。
 func (h *WebHandler) SubmitGet(c *gin.Context) {
 	c.JSON(http.StatusBadRequest, gin.H{
 		"400": "Access method denied",
 	})
 }
 
-// SubmitPost 。。。。 submit 。。 POST 。。。。
+// SubmitPost 处理 submit 的 POST 请求。
 func (h *WebHandler) SubmitPost(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message": "POST test",
@@ -179,6 +190,10 @@ func splitTagInput(raw string) []string {
 
 // saveAvatarFile 校验头像文件并保存到本地目录。
 func saveAvatarFile(fileHeader *multipart.FileHeader) (string, error) {
+	if fileHeader.Size > maxAvatarFileSize {
+		return "", errors.New("avatar file cannot be larger than 512 KB")
+	}
+
 	// 先校验扩展名和文件头，再保存文件。
 	ext := strings.ToLower(filepath.Ext(fileHeader.Filename))
 	allowedContentType, ok := allowedAvatarTypes[ext]
@@ -207,6 +222,18 @@ func saveAvatarFile(fileHeader *multipart.FileHeader) (string, error) {
 		return "", errors.New("failed to reset uploaded file stream")
 	}
 
+	imageConfig, _, err := image.DecodeConfig(file)
+	if err != nil {
+		return "", errors.New("failed to read avatar image")
+	}
+	if imageConfig.Width <= 0 || imageConfig.Height <= 0 || imageConfig.Width > maxAvatarWidth || imageConfig.Height > maxAvatarHeight {
+		return "", errors.New("avatar image dimensions cannot exceed 1024x1024")
+	}
+
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return "", errors.New("failed to reset uploaded file stream")
+	}
+
 	dir := filepath.Join("frontend", "img")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", errors.New("failed to prepare avatar directory")
@@ -229,6 +256,21 @@ func saveAvatarFile(fileHeader *multipart.FileHeader) (string, error) {
 	}
 
 	return fileName, nil
+}
+
+// deleteAvatarFile 只删除头像目录下的文件，避免外部路径被误删。
+func deleteAvatarFile(imageRoute string) error {
+	fileName := filepath.Base(strings.TrimSpace(imageRoute))
+	if fileName == "" || fileName == "." || fileName == ".." {
+		return nil
+	}
+
+	targetPath := filepath.Join("frontend", "img", fileName)
+	if err := os.Remove(targetPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+
+	return nil
 }
 
 // generateAvatarFileName 生成随机且稳定长度的头像文件名。

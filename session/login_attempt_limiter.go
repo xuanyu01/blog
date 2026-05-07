@@ -1,5 +1,5 @@
-﻿/*
-login_attempt_limiter.go 提供基于 Redis 的登录失败限流实现。*/
+/*
+提供基于 Redis 的登录失败限流实现。*/
 package session
 
 import (
@@ -98,4 +98,3 @@ func (l *LoginAttemptLimiter) countKey(key string) string {
 func (l *LoginAttemptLimiter) blockKey(key string) string {
 	return fmt.Sprintf("login_limit:block:%s", key)
 }
-

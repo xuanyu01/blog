@@ -1,5 +1,5 @@
-﻿/*
-router.go 负责注册 HTTP 路由并提供前端静态资源访问。
+/*
+负责注册 HTTP 路由并提供前端静态资源访问。
 */
 package router
 
@@ -16,13 +16,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// New 创建并配。Gin 路由。
+// New 创建并配置 Gin 路由。
 func New(webHandler *handler.WebHandler, sessionStore session.Store, authService *service.AuthService) *gin.Engine {
 	r := gin.Default()
 	_ = r.SetTrustedProxies([]string{"127.0.0.1", "::1"})
 
-	// 用户上传的头像统一。frontend/img 提供访问。	r.Static("/img", filepath.Join("frontend", "img"))
+	// 用户上传的头像统一由 frontend/img 提供访问。
+	r.Static("/img", filepath.Join("frontend", "img"))
 
+	// 公共接口
 	api := r.Group("/api")
 	api.GET("/state", webHandler.GetAppState)
 	api.POST("/register", webHandler.Register)
@@ -36,6 +38,7 @@ func New(webHandler *handler.WebHandler, sessionStore session.Store, authService
 	api.GET("/blogs/:id", webHandler.GetBlogByID)
 	api.GET("/blogs/:id/comments", webHandler.ListComments)
 
+	// 需要登录的接口
 	authRequired := api.Group("")
 	authRequired.Use(middleware.RequireLogin(sessionStore))
 	authRequired.POST("/logout", webHandler.Logout)
@@ -54,6 +57,7 @@ func New(webHandler *handler.WebHandler, sessionStore session.Store, authService
 	authRequired.DELETE("/blogs/:id", webHandler.DeleteBlog)
 	authRequired.DELETE("/comments/:id", webHandler.DeleteComment)
 
+	// 管理员和管理员以上权限的接口
 	managerRoutes := api.Group("")
 	managerRoutes.Use(middleware.RequireManager(sessionStore, authService))
 	managerRoutes.GET("/admin/users", webHandler.ListUsers)
@@ -65,10 +69,12 @@ func New(webHandler *handler.WebHandler, sessionStore session.Store, authService
 	managerRoutes.DELETE("/admin/categories/:id", webHandler.DeleteCategory)
 	managerRoutes.PUT("/admin/blogs/:id/review", webHandler.ReviewBlog)
 
+	// 只有管理员权限的接口
 	adminRoutes := api.Group("")
 	adminRoutes.Use(middleware.RequireAdmin(sessionStore, authService))
 	adminRoutes.PUT("/user/permission", webHandler.UpdateUserPermission)
 
+	// 前端资源路由
 	distDir := filepath.Join("frontend", "dist")
 	assetsDir := filepath.Join(distDir, "assets")
 	indexPath := filepath.Join(distDir, "index.html")

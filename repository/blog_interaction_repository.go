@@ -1,5 +1,5 @@
-﻿/*
-blog_interaction_repository.go 。。。。。Ķ。。。。。。。。޺。。ղصĽ。。。。。。ݴ。。。。
+/*
+负责阅读量、点赞和收藏的交互数据处理。
 */
 package repository
 
@@ -31,4 +31,3 @@ func (r *BlogRepository) ToggleLike(blogID int64, username string) (bool, int64,
 func (r *BlogRepository) ToggleFavorite(blogID int64, username string) (bool, int64, error) {
 	return toggleInteraction(r.db, "post_favorites", "favorite_count", blogID, username)
 }
-

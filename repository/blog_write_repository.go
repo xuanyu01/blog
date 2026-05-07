@@ -1,5 +1,5 @@
-﻿/*
-blog_write_repository.go 。。。𲩿。д。롢。。。¡。ɾ。。。Լ。。。。。。。。。߼。。。
+/*
+负责博客写入、更新、删除以及分类管理逻辑。
 */
 package repository
 
@@ -158,9 +158,20 @@ func (r *BlogRepository) Review(blogID int64, status string, isTop bool) error {
 	return nil
 }
 
-// Delete 删除博客。
+// Delete 软删除博客，保留文章正文、标签、统计、评论和互动数据。
 func (r *BlogRepository) Delete(blogID int64) error {
-	return r.db.Exec("DELETE FROM posts WHERE id = ?", blogID).Error
+	result := r.db.Exec(`
+		UPDATE posts
+		SET deleted_at = NOW(), updated_at = NOW(), status = 'hidden'
+		WHERE id = ? AND deleted_at IS NULL
+	`, blogID)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // CreateCategory 创建分类。

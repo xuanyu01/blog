@@ -23,7 +23,7 @@
           </div>
         </div>
 
-        <div class="quick-actions">
+        <div v-if="!requiresPasswordChange" class="quick-actions">
           <RouterLink :to="profilePath" class="action-card action-card-primary">
             <strong>返回个人主页</strong>
             <span>查看自己发布、点赞和收藏过的博客</span>
@@ -35,8 +35,13 @@
           </RouterLink>
         </div>
 
+        <div v-if="requiresPasswordChange" class="force-password-panel">
+          <h3>首次登录请修改密码</h3>
+          <p>当前管理员账号仍在使用初始化密码。为了保证后台安全，请先修改密码，完成后才能继续使用其它功能。</p>
+        </div>
+
         <div class="user-grid">
-          <form class="panel" @submit.prevent="handleProfileSubmit">
+          <form v-if="!requiresPasswordChange" class="panel" @submit.prevent="handleProfileSubmit">
             <h3>资料信息</h3>
 
             <label class="field">
@@ -63,7 +68,7 @@
           </form>
 
           <form class="panel" @submit.prevent="handlePasswordSubmit">
-            <h3>修改密码</h3>
+            <h3>{{ requiresPasswordChange ? '首次登录修改密码' : '修改密码' }}</h3>
 
             <label class="field">
               <span>当前密码</span>
@@ -84,7 +89,7 @@
             </label>
 
             <button type="submit" :disabled="passwordSaving">
-              {{ passwordSaving ? '保存中...' : '修改密码' }}
+              {{ passwordSaving ? '保存中...' : (requiresPasswordChange ? '完成修改' : '修改密码') }}
             </button>
 
             <p v-if="passwordMessage" :class="passwordSuccess ? 'feedback success' : 'feedback error'">
@@ -135,6 +140,7 @@ const passwordForm = reactive({
 })
 
 const user = computed(() => store.user)
+const requiresPasswordChange = computed(() => Boolean(user.value.mustChangePassword))
 const displayNameForView = computed(() => user.value.displayName || user.value.userName || '用户')
 const permissionText = computed(() => {
   switch (user.value.permission) {
@@ -205,8 +211,12 @@ async function handlePasswordSubmit() {
 
     passwordForm.currentPassword = ''
     passwordForm.newPassword = ''
+    const updatedUser = await refreshCurrentUser()
     passwordSuccess.value = true
-    passwordMessage.value = '密码修改成功'
+    passwordMessage.value = requiresPasswordChange.value ? '密码修改成功，正在进入个人主页' : '密码修改成功'
+    if (!updatedUser.mustChangePassword) {
+      setTimeout(() => router.replace(`/user/${updatedUser.id}`), 800)
+    }
   } catch (error) {
     passwordSuccess.value = false
     passwordMessage.value = error.message
@@ -354,4 +364,19 @@ async function handlePasswordSubmit() {
   cursor: wait;
   opacity: 0.72;
 }
+.force-password-panel {
+  display: grid;
+  gap: 8px;
+  padding: 20px 24px;
+  border: 1px solid rgba(165, 58, 58, 0.18);
+  border-radius: 20px;
+  background: rgba(255, 245, 238, 0.92);
+  color: #7b3e24;
+}
+
+.force-password-panel h3,
+.force-password-panel p {
+  margin: 0;
+}
+
 </style>

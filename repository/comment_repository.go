@@ -1,11 +1,12 @@
-﻿/*
-comment_repository.go 负责评论数据的查询和写入逻辑。
+/*
+负责评论数据的查询和写入逻辑。
 */
 package repository
 
 import (
 	"blog/model"
 	"database/sql"
+	"errors"
 
 	"gorm.io/gorm"
 )
@@ -20,52 +21,96 @@ func NewCommentRepository(db *gorm.DB) *CommentRepository {
 	return &CommentRepository{db: db}
 }
 
-// ListByPostID 返回指定博客下的一级评论。
+// ListByPostID 返回指定博客下可见的评论树。
 func (r *CommentRepository) ListByPostID(postID int64) ([]model.Comment, error) {
 	rows, err := r.db.Raw(`
 		SELECT
 			c.id,
 			c.post_id,
 			c.user_id,
-			COALESCE(u.username, ''),
-			COALESCE(NULLIF(u.display_name, ''), u.username, ''),
+			c.parent_id,
+			c.root_id,
+			CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE COALESCE(u.username, '') END,
+			CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE COALESCE(NULLIF(u.display_name, ''), u.username, '') END,
+			CASE WHEN parent_u.id IS NULL OR parent_u.status = 'deleted' THEN '用户已注销' ELSE COALESCE(parent_u.username, '') END,
 			c.content,
 			c.created_at
 		FROM comments c
-		INNER JOIN users u ON u.id = c.user_id
+		LEFT JOIN users u ON u.id = c.user_id
+		LEFT JOIN comments parent_c ON parent_c.id = c.parent_id
+		LEFT JOIN users parent_u ON parent_u.id = parent_c.user_id
 		WHERE c.post_id = ?
-			AND c.parent_id IS NULL
 			AND c.deleted_at IS NULL
 			AND c.status = 'published'
-		ORDER BY c.created_at ASC, c.id ASC
+		ORDER BY COALESCE(c.root_id, c.id) ASC, c.parent_id IS NOT NULL ASC, c.created_at ASC, c.id ASC
 	`, postID).Rows()
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
 
-	var comments []model.Comment
+	comments := make([]model.Comment, 0)
 	for rows.Next() {
 		var comment model.Comment
+		var parentID sql.NullInt64
+		var rootID sql.NullInt64
 		if err := rows.Scan(
 			&comment.ID,
 			&comment.PostID,
 			&comment.UserID,
+			&parentID,
+			&rootID,
 			&comment.Username,
 			&comment.DisplayName,
+			&comment.ReplyToUsername,
 			&comment.Content,
 			&comment.CreatedAt,
 		); err != nil {
 			return nil, err
 		}
+		if parentID.Valid {
+			value := parentID.Int64
+			comment.ParentID = &value
+		}
+		if rootID.Valid {
+			value := rootID.Int64
+			comment.RootID = &value
+		}
 		comments = append(comments, comment)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-	return comments, rows.Err()
+	return buildCommentTree(comments), nil
 }
 
-// Create 写入一条一级评论并返回详情。
-func (r *CommentRepository) Create(postID int64, username, content string) (*model.Comment, error) {
+func buildCommentTree(comments []model.Comment) []model.Comment {
+	roots := make([]model.Comment, 0)
+	rootIndex := make(map[int64]int)
+
+	for _, comment := range comments {
+		if comment.ParentID == nil {
+			comment.Replies = nil
+			rootIndex[comment.ID] = len(roots)
+			roots = append(roots, comment)
+			continue
+		}
+
+		rootID := *comment.ParentID
+		if comment.RootID != nil {
+			rootID = *comment.RootID
+		}
+		if index, ok := rootIndex[rootID]; ok {
+			roots[index].Replies = append(roots[index].Replies, comment)
+		}
+	}
+
+	return roots
+}
+
+// Create 写入一级评论或回复并返回新评论。
+func (r *CommentRepository) Create(postID int64, parentID int64, username, content string) (*model.Comment, error) {
 	tx := r.db.Begin()
 	if tx.Error != nil {
 		return nil, tx.Error
@@ -82,10 +127,36 @@ func (r *CommentRepository) Create(postID int64, username, content string) (*mod
 		return nil, err
 	}
 
+	var insertParentID any
+	var insertRootID any
+	var replyToUsername string
+	if parentID > 0 {
+		var parentPostID int64
+		var parentRootID sql.NullInt64
+		if err := tx.Raw(`
+			SELECT c.post_id, c.root_id, CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE COALESCE(u.username, '') END
+			FROM comments c
+			LEFT JOIN users u ON u.id = c.user_id
+			WHERE c.id = ? AND c.deleted_at IS NULL AND c.status = 'published'
+		`, parentID).Row().Scan(&parentPostID, &parentRootID, &replyToUsername); err != nil {
+			return nil, err
+		}
+		if parentPostID != postID {
+			return nil, errors.New("parent comment does not belong to this blog")
+		}
+
+		insertParentID = parentID
+		if parentRootID.Valid {
+			insertRootID = parentRootID.Int64
+		} else {
+			insertRootID = parentID
+		}
+	}
+
 	result := tx.Exec(`
-		INSERT INTO comments (post_id, user_id, content, status)
-		VALUES (?, ?, ?, 'published')
-	`, postID, userID, content)
+		INSERT INTO comments (post_id, user_id, parent_id, root_id, content, status)
+		VALUES (?, ?, ?, ?, ?, 'published')
+	`, postID, userID, insertParentID, insertRootID, content)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -96,12 +167,19 @@ func (r *CommentRepository) Create(postID int64, username, content string) (*mod
 	}
 
 	comment := &model.Comment{
-		ID:          commentID,
-		PostID:      postID,
-		UserID:      userID,
-		Username:    username,
-		DisplayName: displayName,
-		Content:     content,
+		ID:              commentID,
+		PostID:          postID,
+		UserID:          userID,
+		Username:        username,
+		DisplayName:     displayName,
+		ReplyToUsername: replyToUsername,
+		Content:         content,
+	}
+	if parentID > 0 {
+		comment.ParentID = &parentID
+		if rootID, ok := insertRootID.(int64); ok {
+			comment.RootID = &rootID
+		}
 	}
 	if err := tx.Raw(`
 		SELECT created_at
@@ -130,9 +208,9 @@ func (r *CommentRepository) Create(postID int64, username, content string) (*mod
 func (r *CommentRepository) GetAuthorByID(commentID int64) (string, error) {
 	var username string
 	err := r.db.Raw(`
-		SELECT COALESCE(u.username, '')
+		SELECT CASE WHEN u.id IS NULL OR u.status = 'deleted' THEN '用户已注销' ELSE COALESCE(u.username, '') END
 		FROM comments c
-		INNER JOIN users u ON u.id = c.user_id
+		LEFT JOIN users u ON u.id = c.user_id
 		WHERE c.id = ? AND c.deleted_at IS NULL
 	`, commentID).Row().Scan(&username)
 	if err != nil {
@@ -182,4 +260,3 @@ func (r *CommentRepository) Delete(commentID int64) error {
 
 	return tx.Commit().Error
 }
-

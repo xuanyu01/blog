@@ -1,5 +1,5 @@
-﻿/*
-user_repository.go 负责用户数据的查询和写入逻辑。
+/*
+负责用户数据的查询和写入逻辑。
 */
 package repository
 
@@ -7,11 +7,13 @@ import (
 	"blog/model"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"gorm.io/gorm"
 )
 
 const defaultUserPermission = model.PermissionUser
+const deletedUserDisplayName = "用户已注销"
 
 // UserRepository 负责用户数据读写。
 type UserRepository struct {
@@ -27,7 +29,7 @@ func NewUserRepository(db *gorm.DB) *UserRepository {
 func (r *UserRepository) Exists(username string) (bool, error) {
 	var count int64
 	err := r.db.Table("users").
-		Where("username = ? AND deleted_at IS NULL", username).
+		Where("username = ? AND deleted_at IS NULL AND status <> 'deleted'", username).
 		Count(&count).Error
 	if err != nil {
 		return false, err
@@ -51,7 +53,7 @@ func (r *UserRepository) GetPasswordByUsername(username string) (string, error) 
 	var hashedPassword string
 	err := r.db.Table("users").
 		Select("password_hash").
-		Where("username = ? AND deleted_at IS NULL", username).
+		Where("username = ? AND deleted_at IS NULL AND status <> 'deleted'", username).
 		Row().
 		Scan(&hashedPassword)
 	if err != nil {
@@ -67,9 +69,9 @@ func (r *UserRepository) GetPasswordByUsername(username string) (string, error) 
 func (r *UserRepository) GetByUsername(username string) (model.User, error) {
 	var user model.User
 	err := r.db.Raw(
-		"SELECT id, username, COALESCE(display_name, ''), COALESCE(avatar_url, ''), COALESCE(permission, ''), COALESCE(status, '') FROM users WHERE username=? AND deleted_at IS NULL",
+		"SELECT id, username, COALESCE(display_name, ''), COALESCE(avatar_url, ''), COALESCE(permission, ''), COALESCE(status, ''), COALESCE(must_change_password, 0) FROM users WHERE username=? AND deleted_at IS NULL AND status <> 'deleted'",
 		username,
-	).Row().Scan(&user.ID, &user.Username, &user.DisplayName, &user.Image, &user.Permission, &user.Status)
+	).Row().Scan(&user.ID, &user.Username, &user.DisplayName, &user.Image, &user.Permission, &user.Status, &user.MustChangePassword)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return model.User{}, sql.ErrNoRows
@@ -83,7 +85,7 @@ func (r *UserRepository) GetByUsername(username string) (model.User, error) {
 // UpdateProfile 更新显示名和头像。
 func (r *UserRepository) UpdateProfile(username, displayName, image string) error {
 	return r.db.Exec(
-		"UPDATE users SET display_name=?, avatar_url=? WHERE username=? AND deleted_at IS NULL",
+		"UPDATE users SET display_name=?, avatar_url=? WHERE username=? AND deleted_at IS NULL AND status <> 'deleted'",
 		displayName,
 		image,
 		username,
@@ -93,7 +95,7 @@ func (r *UserRepository) UpdateProfile(username, displayName, image string) erro
 // UpdateImage 更新头像路径。
 func (r *UserRepository) UpdateImage(username, image string) error {
 	return r.db.Exec(
-		"UPDATE users SET avatar_url=? WHERE username=? AND deleted_at IS NULL",
+		"UPDATE users SET avatar_url=? WHERE username=? AND deleted_at IS NULL AND status <> 'deleted'",
 		image,
 		username,
 	).Error
@@ -102,7 +104,7 @@ func (r *UserRepository) UpdateImage(username, image string) error {
 // UpdatePassword 更新密码哈希。
 func (r *UserRepository) UpdatePassword(username, hashedPassword string) error {
 	return r.db.Exec(
-		"UPDATE users SET password_hash=? WHERE username=? AND deleted_at IS NULL",
+		"UPDATE users SET password_hash=?, must_change_password=0 WHERE username=? AND deleted_at IS NULL AND status <> 'deleted'",
 		hashedPassword,
 		username,
 	).Error
@@ -111,7 +113,7 @@ func (r *UserRepository) UpdatePassword(username, hashedPassword string) error {
 // UpdatePermission 更新用户权限。
 func (r *UserRepository) UpdatePermission(username, permission string) error {
 	return r.db.Exec(
-		"UPDATE users SET permission=? WHERE username=? AND deleted_at IS NULL",
+		"UPDATE users SET permission=? WHERE username=? AND deleted_at IS NULL AND status <> 'deleted'",
 		permission,
 		username,
 	).Error
@@ -121,7 +123,7 @@ func (r *UserRepository) UpdatePermission(username, permission string) error {
 func (r *UserRepository) CountByPermission(permission string) (int, error) {
 	var count int64
 	err := r.db.Table("users").
-		Where("permission = ? AND deleted_at IS NULL", permission).
+		Where("permission = ? AND deleted_at IS NULL AND status <> 'deleted'", permission).
 		Count(&count).Error
 	if err != nil {
 		return 0, err
@@ -134,7 +136,7 @@ func (r *UserRepository) ListUsers(limit, offset int) ([]model.UserListItem, err
 	rows, err := r.db.Raw(`
 		SELECT username, COALESCE(display_name, ''), COALESCE(permission, '')
 		FROM users
-		WHERE deleted_at IS NULL
+		WHERE deleted_at IS NULL AND status <> 'deleted'
 		ORDER BY id DESC
 		LIMIT ? OFFSET ?
 	`, limit, offset).Rows()
@@ -159,7 +161,7 @@ func (r *UserRepository) ListUsers(limit, offset int) ([]model.UserListItem, err
 func (r *UserRepository) CountUsers() (int, error) {
 	var count int64
 	err := r.db.Table("users").
-		Where("deleted_at IS NULL").
+		Where("deleted_at IS NULL AND status <> 'deleted'").
 		Count(&count).Error
 	if err != nil {
 		return 0, err
@@ -167,8 +169,74 @@ func (r *UserRepository) CountUsers() (int, error) {
 	return int(count), nil
 }
 
-// DeleteUser 软删除用户。
+// DeleteUser 硬删除原用户，并将历史内容和互动关系转交给匿名注销用户。
 func (r *UserRepository) DeleteUser(username string) error {
-	return r.db.Exec("UPDATE users SET deleted_at=NOW(), status='deleted' WHERE username=? AND deleted_at IS NULL", username).Error
+	tx := r.db.Begin()
+	if tx.Error != nil {
+		return tx.Error
+	}
+	defer tx.Rollback()
+
+	var userID int64
+	if err := tx.Raw(`
+		SELECT id
+		FROM users
+		WHERE username = ? AND deleted_at IS NULL AND status <> 'deleted'
+	`, username).Row().Scan(&userID); err != nil {
+		return err
+	}
+
+	anonymousUsername := fmt.Sprintf("deleted_user_%d", userID)
+	if err := tx.Exec(`
+		INSERT INTO users (username, display_name, email, password_hash, avatar_url, permission, status, bio, must_change_password)
+		VALUES (?, ?, NULL, 'deleted', '', ?, 'deleted', '', 0)
+		ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), status = 'deleted', updated_at = NOW()
+	`, anonymousUsername, deletedUserDisplayName, model.PermissionUser).Error; err != nil {
+		return err
+	}
+
+	var anonymousUserID int64
+	if err := tx.Raw(`
+		SELECT id
+		FROM users
+		WHERE username = ? AND status = 'deleted'
+	`, anonymousUsername).Row().Scan(&anonymousUserID); err != nil {
+		return err
+	}
+
+	if err := tx.Exec(`UPDATE posts SET author_id = ?, updated_at = NOW() WHERE author_id = ?`, anonymousUserID, userID).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`UPDATE comments SET user_id = ?, updated_at = NOW() WHERE user_id = ?`, anonymousUserID, userID).Error; err != nil {
+		return err
+	}
+
+	if err := moveUserInteractions(tx, "post_likes", anonymousUserID, userID); err != nil {
+		return err
+	}
+	if err := moveUserInteractions(tx, "post_favorites", anonymousUserID, userID); err != nil {
+		return err
+	}
+
+	if err := tx.Exec(`DELETE FROM user_follows WHERE follower_id = ? OR followee_id = ?`, userID, userID).Error; err != nil {
+		return err
+	}
+	if err := tx.Exec(`DELETE FROM users WHERE id = ?`, userID).Error; err != nil {
+		return err
+	}
+
+	return tx.Commit().Error
 }
 
+// moveUserInteractions 将点赞或收藏记录迁移给匿名注销用户，并保持统计数量不变。
+func moveUserInteractions(tx *gorm.DB, table string, anonymousUserID, userID int64) error {
+	if err := tx.Exec(fmt.Sprintf(`
+		INSERT IGNORE INTO %s (post_id, user_id, created_at)
+		SELECT post_id, ?, created_at
+		FROM %s
+		WHERE user_id = ?
+	`, table, table), anonymousUserID, userID).Error; err != nil {
+		return err
+	}
+	return tx.Exec(fmt.Sprintf(`DELETE FROM %s WHERE user_id = ?`, table), userID).Error
+}

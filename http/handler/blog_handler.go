@@ -1,5 +1,5 @@
-﻿/*
-blog_handler.go 。。。。。。͡。。ղء。。。。。。ͺ。̨。。。͹。。。。。ؽӿڡ。
+/*
+处理博客、收藏、互动和后台博客管理相关接口。
 */
 package handler
 
@@ -194,7 +194,7 @@ func (h *WebHandler) ListLikedBlogs(c *gin.Context) {
 	})
 }
 
-// ReviewBlog 。。。。。。。。。。。。。。
+// ReviewBlog 处理博客审核请求。
 func (h *WebHandler) ReviewBlog(c *gin.Context) {
 	user := h.getCurrentUser(c)
 	if !user.IsLogin {
@@ -272,7 +272,7 @@ func (h *WebHandler) GetBlogByID(c *gin.Context) {
 	c.JSON(http.StatusOK, blog)
 }
 
-// ToggleBlogLike 。。。。。。。。л。。。。。
+// ToggleBlogLike 处理点赞切换请求。
 func (h *WebHandler) ToggleBlogLike(c *gin.Context) {
 	user := h.getCurrentUser(c)
 	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -308,7 +308,7 @@ func (h *WebHandler) ToggleBlogLike(c *gin.Context) {
 	})
 }
 
-// ToggleBlogFavorite 。。。。。ղ。。л。。。。。
+// ToggleBlogFavorite 处理收藏切换请求。
 func (h *WebHandler) ToggleBlogFavorite(c *gin.Context) {
 	user := h.getCurrentUser(c)
 	blogID, err := strconv.ParseInt(c.Param("id"), 10, 64)
@@ -344,7 +344,7 @@ func (h *WebHandler) ToggleBlogFavorite(c *gin.Context) {
 	})
 }
 
-// CreateBlog 。。。。。。ʹ。。。。。。。
+// CreateBlog 处理博客创建请求。
 func (h *WebHandler) CreateBlog(c *gin.Context) {
 	user := h.getCurrentUser(c)
 	if !user.IsLogin {
@@ -390,7 +390,7 @@ func (h *WebHandler) CreateBlog(c *gin.Context) {
 	})
 }
 
-// UpdateBlog 。。。。。。ͱ༭。。。。
+// UpdateBlog 处理博客编辑请求。
 func (h *WebHandler) UpdateBlog(c *gin.Context) {
 	user := h.getCurrentUser(c)
 	if !user.IsLogin {
@@ -447,7 +447,7 @@ func (h *WebHandler) UpdateBlog(c *gin.Context) {
 	})
 }
 
-// DeleteBlog 。。。。。。。ɾ。。。。。。
+// DeleteBlog 处理博客删除请求。
 func (h *WebHandler) DeleteBlog(c *gin.Context) {
 	user := h.getCurrentUser(c)
 	if !user.IsLogin {

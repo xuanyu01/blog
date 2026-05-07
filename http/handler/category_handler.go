@@ -1,5 +1,5 @@
-﻿/*
-category_handler.go 。。。。。。ࡢ。。ǩ。͹鵵。。ؽӿڡ。
+/*
+处理分类、标签和归档相关接口。
 */
 package handler
 
@@ -168,4 +168,3 @@ func (h *WebHandler) DeleteCategory(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{"message": "Category deleted"})
 }
-

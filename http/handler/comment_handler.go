@@ -1,5 +1,5 @@
-﻿/*
-comment_handler.go 。。。。。。。۲。ѯ。。。。。。。。ɾ。。。。ؽӿڡ。
+/*
+处理评论查询、创建和删除接口。
 */
 package handler
 
@@ -42,7 +42,7 @@ func (h *WebHandler) ListComments(c *gin.Context) {
 	})
 }
 
-// CreateComment 创建博客评论。
+// CreateComment 创建博客评论或回复。
 func (h *WebHandler) CreateComment(c *gin.Context) {
 	user := h.getCurrentUser(c)
 	if !user.IsLogin {
@@ -68,13 +68,13 @@ func (h *WebHandler) CreateComment(c *gin.Context) {
 		return
 	}
 
-	comment, err := h.commentService.CreateComment(blogID, payload.Content, user.UserName, user.Permission)
+	comment, err := h.commentService.CreateComment(blogID, payload.ParentID, payload.Content, user.UserName, user.Permission)
 	if err != nil {
 		statusCode := http.StatusBadRequest
 		switch err.Error() {
 		case "unauthorized":
 			statusCode = http.StatusUnauthorized
-		case "blog not found":
+		case "blog not found", "parent comment not found":
 			statusCode = http.StatusNotFound
 		case "forbidden":
 			statusCode = http.StatusForbidden
@@ -131,4 +131,3 @@ func (h *WebHandler) DeleteComment(c *gin.Context) {
 		"message": "Comment deleted",
 	})
 }
-

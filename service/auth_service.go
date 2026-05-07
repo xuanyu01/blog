@@ -1,5 +1,5 @@
-﻿/*
-auth_service.go 。。。。。。֤。。。û。。。。Ϻ。。û。。。。。。。。ҵ。。。߼。。。
+/*
+负责认证、用户资料和用户管理相关业务逻辑。
 */
 package service
 
@@ -101,7 +101,7 @@ func (s *AuthService) Logout(sessionID string) error {
 	return s.sessionStore.Delete(sessionID)
 }
 
-// CurrentUser 。sessionID 获取当前登录用户。
+// CurrentUser 按 sessionID 获取当前登录用户。
 func (s *AuthService) CurrentUser(sessionID string) (model.UserView, error) {
 	if sessionID == "" {
 		return model.UserView{}, nil
@@ -340,11 +340,12 @@ func (s *AuthService) userViewByUsername(username string) (model.UserView, error
 	}
 
 	return model.UserView{
-		ID:          user.ID,
-		UserName:    user.Username,
-		DisplayName: user.DisplayName,
-		ImageRoute:  user.Image,
-		Permission:  user.Permission,
-		IsLogin:     true,
+		ID:                 user.ID,
+		UserName:           user.Username,
+		DisplayName:        user.DisplayName,
+		ImageRoute:         user.Image,
+		Permission:         user.Permission,
+		IsLogin:            true,
+		MustChangePassword: user.MustChangePassword,
 	}, nil
 }
