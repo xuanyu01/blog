@@ -171,61 +171,57 @@ func (r *UserRepository) CountUsers() (int, error) {
 
 // DeleteUser 硬删除原用户，并将历史内容和互动关系转交给匿名注销用户。
 func (r *UserRepository) DeleteUser(username string) error {
-	tx := r.db.Begin()
-	if tx.Error != nil {
-		return tx.Error
-	}
-	defer tx.Rollback()
+	return r.db.Transaction(func(tx *gorm.DB) error {
+		var userID int64
+		if err := tx.Raw(`
+			SELECT id
+			FROM users
+			WHERE username = ? AND deleted_at IS NULL AND status <> 'deleted'
+		`, username).Row().Scan(&userID); err != nil {
+			return err
+		}
 
-	var userID int64
-	if err := tx.Raw(`
-		SELECT id
-		FROM users
-		WHERE username = ? AND deleted_at IS NULL AND status <> 'deleted'
-	`, username).Row().Scan(&userID); err != nil {
-		return err
-	}
+		anonymousUsername := fmt.Sprintf("deleted_user_%d", userID)
+		if err := tx.Exec(`
+			INSERT INTO users (username, display_name, email, password_hash, avatar_url, permission, status, bio, must_change_password)
+			VALUES (?, ?, NULL, 'deleted', '', ?, 'deleted', '', 0)
+			ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), status = 'deleted', updated_at = NOW()
+		`, anonymousUsername, deletedUserDisplayName, model.PermissionUser).Error; err != nil {
+			return err
+		}
 
-	anonymousUsername := fmt.Sprintf("deleted_user_%d", userID)
-	if err := tx.Exec(`
-		INSERT INTO users (username, display_name, email, password_hash, avatar_url, permission, status, bio, must_change_password)
-		VALUES (?, ?, NULL, 'deleted', '', ?, 'deleted', '', 0)
-		ON DUPLICATE KEY UPDATE display_name = VALUES(display_name), status = 'deleted', updated_at = NOW()
-	`, anonymousUsername, deletedUserDisplayName, model.PermissionUser).Error; err != nil {
-		return err
-	}
+		var anonymousUserID int64
+		if err := tx.Raw(`
+			SELECT id
+			FROM users
+			WHERE username = ? AND status = 'deleted'
+		`, anonymousUsername).Row().Scan(&anonymousUserID); err != nil {
+			return err
+		}
 
-	var anonymousUserID int64
-	if err := tx.Raw(`
-		SELECT id
-		FROM users
-		WHERE username = ? AND status = 'deleted'
-	`, anonymousUsername).Row().Scan(&anonymousUserID); err != nil {
-		return err
-	}
+		if err := tx.Exec(`UPDATE posts SET author_id = ?, updated_at = NOW() WHERE author_id = ?`, anonymousUserID, userID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`UPDATE comments SET user_id = ?, updated_at = NOW() WHERE user_id = ?`, anonymousUserID, userID).Error; err != nil {
+			return err
+		}
 
-	if err := tx.Exec(`UPDATE posts SET author_id = ?, updated_at = NOW() WHERE author_id = ?`, anonymousUserID, userID).Error; err != nil {
-		return err
-	}
-	if err := tx.Exec(`UPDATE comments SET user_id = ?, updated_at = NOW() WHERE user_id = ?`, anonymousUserID, userID).Error; err != nil {
-		return err
-	}
+		if err := moveUserInteractions(tx, "post_likes", anonymousUserID, userID); err != nil {
+			return err
+		}
+		if err := moveUserInteractions(tx, "post_favorites", anonymousUserID, userID); err != nil {
+			return err
+		}
 
-	if err := moveUserInteractions(tx, "post_likes", anonymousUserID, userID); err != nil {
-		return err
-	}
-	if err := moveUserInteractions(tx, "post_favorites", anonymousUserID, userID); err != nil {
-		return err
-	}
+		if err := tx.Exec(`DELETE FROM user_follows WHERE follower_id = ? OR followee_id = ?`, userID, userID).Error; err != nil {
+			return err
+		}
+		if err := tx.Exec(`DELETE FROM users WHERE id = ?`, userID).Error; err != nil {
+			return err
+		}
 
-	if err := tx.Exec(`DELETE FROM user_follows WHERE follower_id = ? OR followee_id = ?`, userID, userID).Error; err != nil {
-		return err
-	}
-	if err := tx.Exec(`DELETE FROM users WHERE id = ?`, userID).Error; err != nil {
-		return err
-	}
-
-	return tx.Commit().Error
+		return nil
+	})
 }
 
 // moveUserInteractions 将点赞或收藏记录迁移给匿名注销用户，并保持统计数量不变。

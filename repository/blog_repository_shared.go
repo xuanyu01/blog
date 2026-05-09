@@ -276,72 +276,70 @@ func hasInteraction(db *gorm.DB, table string, blogID int64, username string) (b
 
 // toggleInteraction 切换点赞或收藏状态并同步更新统计值。
 func toggleInteraction(db *gorm.DB, table, statColumn string, blogID int64, username string) (bool, int64, error) {
-	tx := db.Begin()
-	if tx.Error != nil {
-		return false, 0, tx.Error
-	}
-	defer tx.Rollback()
-
-	userID, err := getUserIDByUsername(tx, username)
-	if err != nil {
-		return false, 0, err
-	}
-
-	var exists int
-	err = tx.Raw(fmt.Sprintf(`
-		SELECT 1
-		FROM %s
-		WHERE post_id = ? AND user_id = ?
-	`, table), blogID, userID).Row().Scan(&exists)
-	active := false
-
-	// 先切换互动记录，再回读最新统计值。
-	switch err {
-	case nil:
-		if err := tx.Exec(fmt.Sprintf(`
-			DELETE FROM %s
-			WHERE post_id = ? AND user_id = ?
-		`, table), blogID, userID).Error; err != nil {
-			return false, 0, err
-		}
-
-		if err := tx.Exec(fmt.Sprintf(`
-			UPDATE post_stats
-			SET %s = CASE WHEN %s > 0 THEN %s - 1 ELSE 0 END, updated_at = NOW()
-			WHERE post_id = ?
-		`, statColumn, statColumn, statColumn), blogID).Error; err != nil {
-			return false, 0, err
-		}
-	case sql.ErrNoRows:
-		if err := tx.Exec(fmt.Sprintf(`
-			INSERT INTO %s (post_id, user_id)
-			VALUES (?, ?)
-		`, table), blogID, userID).Error; err != nil {
-			return false, 0, err
-		}
-
-		if err := tx.Exec(fmt.Sprintf(`
-			UPDATE post_stats
-			SET %s = %s + 1, updated_at = NOW()
-			WHERE post_id = ?
-		`, statColumn, statColumn), blogID).Error; err != nil {
-			return false, 0, err
-		}
-		active = true
-	default:
-		return false, 0, err
-	}
-
+	var active bool
 	var count int64
-	if err := tx.Raw(fmt.Sprintf(`
-		SELECT %s
-		FROM post_stats
-		WHERE post_id = ?
-	`, statColumn), blogID).Row().Scan(&count); err != nil {
-		return false, 0, err
-	}
+	err := db.Transaction(func(tx *gorm.DB) error {
+		userID, err := getUserIDByUsername(tx, username)
+		if err != nil {
+			return err
+		}
 
-	if err := tx.Commit().Error; err != nil {
+		var exists int
+		err = tx.Raw(fmt.Sprintf(`
+			SELECT 1
+			FROM %s
+			WHERE post_id = ? AND user_id = ?
+		`, table), blogID, userID).Row().Scan(&exists)
+		active = false
+
+		// 先切换互动记录，再回读最新统计值。
+		switch err {
+		case nil:
+			if err := tx.Exec(fmt.Sprintf(`
+				DELETE FROM %s
+				WHERE post_id = ? AND user_id = ?
+			`, table), blogID, userID).Error; err != nil {
+				return err
+			}
+
+			if err := tx.Exec(fmt.Sprintf(`
+				UPDATE post_stats
+				SET %s = CASE WHEN %s > 0 THEN %s - 1 ELSE 0 END, updated_at = NOW()
+				WHERE post_id = ?
+			`, statColumn, statColumn, statColumn), blogID).Error; err != nil {
+				return err
+			}
+		case sql.ErrNoRows:
+			if err := tx.Exec(fmt.Sprintf(`
+				INSERT INTO %s (post_id, user_id)
+				VALUES (?, ?)
+			`, table), blogID, userID).Error; err != nil {
+				return err
+			}
+
+			if err := tx.Exec(fmt.Sprintf(`
+				UPDATE post_stats
+				SET %s = %s + 1, updated_at = NOW()
+				WHERE post_id = ?
+			`, statColumn, statColumn), blogID).Error; err != nil {
+				return err
+			}
+			active = true
+		default:
+			return err
+		}
+
+		if err := tx.Raw(fmt.Sprintf(`
+			SELECT %s
+			FROM post_stats
+			WHERE post_id = ?
+		`, statColumn), blogID).Row().Scan(&count); err != nil {
+			return err
+		}
+
+		return nil
+	})
+	if err != nil {
 		return false, 0, err
 	}
 

@@ -8,73 +8,73 @@ import (
 	"database/sql"
 	"fmt"
 	"time"
+
+	"gorm.io/gorm"
 )
 
 // Create 写入一篇新博客。
 func (r *BlogRepository) Create(blog *model.Blog) error {
-	tx := r.db.Begin()
-	if tx.Error != nil {
-		return tx.Error
-	}
-	defer tx.Rollback()
-	// 先解析作者 ID，避免后续写入文章时丢失作者关系。
-	authorID, err := getUserIDByUsername(tx, blog.AuthorUsername)
-	if err != nil {
-		return err
-	}
-
-	if err := ensureCategoryExists(tx, blog.CategoryID); err != nil {
-		return err
-	}
-
-	slug := blog.Slug
-	if slug == "" {
-		slug = fmt.Sprintf("post-%d", time.Now().UnixNano())
-	}
-
-	var publishedAt any
-	if blog.Status == "published" {
-		now := time.Now()
-		publishedAt = now
-		blog.PublishedAt = &now
-	} else {
-		publishedAt = nil
-		blog.PublishedAt = nil
-	}
-
-	result := tx.Exec(`
-		INSERT INTO posts (author_id, category_id, title, slug, summary, status, visibility, published_at, is_top)
-		VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, 'public', ?, ?)
-	`, authorID, blog.CategoryID, blog.Title, slug, blog.Summary, blog.Status, publishedAt, blog.IsTop)
-	if result.Error != nil {
-		return result.Error
-	}
-
 	var postID int64
-	if err := tx.Raw("SELECT LAST_INSERT_ID()").Row().Scan(&postID); err != nil {
-		return err
-	}
-	blog.ID = postID
-	blog.AuthorID = authorID
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		// 先解析作者 ID，避免后续写入文章时丢失作者关系。
+		authorID, err := getUserIDByUsername(tx, blog.AuthorUsername)
+		if err != nil {
+			return err
+		}
 
-	if err := tx.Exec(`
-		INSERT INTO post_contents (post_id, content_markdown, content_text, word_count)
-		VALUES (?, ?, ?, ?)
-	`, postID, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content)).Error; err != nil {
-		return err
-	}
+		if err := ensureCategoryExists(tx, blog.CategoryID); err != nil {
+			return err
+		}
 
-	if err := tx.Exec("INSERT INTO post_stats (post_id) VALUES (?)", postID).Error; err != nil {
-		return err
-	}
+		slug := blog.Slug
+		if slug == "" {
+			slug = fmt.Sprintf("post-%d", time.Now().UnixNano())
+		}
 
-	tags, err := replacePostTags(tx, postID, blog.Tags)
+		var publishedAt any
+		if blog.Status == "published" {
+			now := time.Now()
+			publishedAt = now
+			blog.PublishedAt = &now
+		} else {
+			publishedAt = nil
+			blog.PublishedAt = nil
+		}
+
+		result := tx.Exec(`
+			INSERT INTO posts (author_id, category_id, title, slug, summary, status, visibility, published_at, is_top)
+			VALUES (?, NULLIF(?, 0), ?, ?, ?, ?, 'public', ?, ?)
+		`, authorID, blog.CategoryID, blog.Title, slug, blog.Summary, blog.Status, publishedAt, blog.IsTop)
+		if result.Error != nil {
+			return result.Error
+		}
+
+		if err := tx.Raw("SELECT LAST_INSERT_ID()").Row().Scan(&postID); err != nil {
+			return err
+		}
+		blog.ID = postID
+		blog.AuthorID = authorID
+
+		if err := tx.Exec(`
+			INSERT INTO post_contents (post_id, content_markdown, content_text, word_count)
+			VALUES (?, ?, ?, ?)
+		`, postID, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content)).Error; err != nil {
+			return err
+		}
+
+		if err := tx.Exec("INSERT INTO post_stats (post_id) VALUES (?)", postID).Error; err != nil {
+			return err
+		}
+
+		tags, err := replacePostTags(tx, postID, blog.Tags)
+		if err != nil {
+			return err
+		}
+		blog.Tags = tags
+
+		return nil
+	})
 	if err != nil {
-		return err
-	}
-	blog.Tags = tags
-
-	if err := tx.Commit().Error; err != nil {
 		return err
 	}
 
@@ -83,53 +83,50 @@ func (r *BlogRepository) Create(blog *model.Blog) error {
 
 // Update 更新博客内容和状态。
 func (r *BlogRepository) Update(blog *model.Blog) error {
-	tx := r.db.Begin()
-	if tx.Error != nil {
-		return tx.Error
-	}
-	defer tx.Rollback()
-
-	// 更新主表和正文表后，重新同步标签关系。
-	if err := ensureCategoryExists(tx, blog.CategoryID); err != nil {
-		return err
-	}
-
-	var publishedAt any
-	if blog.Status == "published" {
-		if blog.PublishedAt != nil {
-			publishedAt = *blog.PublishedAt
-		} else {
-			now := time.Now()
-			publishedAt = now
-			blog.PublishedAt = &now
+	err := r.db.Transaction(func(tx *gorm.DB) error {
+		// 更新主表和正文表后，重新同步标签关系。
+		if err := ensureCategoryExists(tx, blog.CategoryID); err != nil {
+			return err
 		}
-	} else {
-		publishedAt = nil
-	}
 
-	if err := tx.Exec(`
-		UPDATE posts
-		SET category_id = NULLIF(?, 0), title = ?, summary = ?, status = ?, is_top = ?, published_at = ?, updated_at = NOW()
-		WHERE id = ? AND deleted_at IS NULL
-	`, blog.CategoryID, blog.Title, blog.Summary, blog.Status, blog.IsTop, publishedAt, blog.ID).Error; err != nil {
-		return err
-	}
+		var publishedAt any
+		if blog.Status == "published" {
+			if blog.PublishedAt != nil {
+				publishedAt = *blog.PublishedAt
+			} else {
+				now := time.Now()
+				publishedAt = now
+				blog.PublishedAt = &now
+			}
+		} else {
+			publishedAt = nil
+		}
 
-	if err := tx.Exec(`
-		UPDATE post_contents
-		SET content_markdown = ?, content_text = ?, word_count = ?, updated_at = NOW()
-		WHERE post_id = ?
-	`, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content), blog.ID).Error; err != nil {
-		return err
-	}
+		if err := tx.Exec(`
+			UPDATE posts
+			SET category_id = NULLIF(?, 0), title = ?, summary = ?, status = ?, is_top = ?, published_at = ?, updated_at = NOW()
+			WHERE id = ? AND deleted_at IS NULL
+		`, blog.CategoryID, blog.Title, blog.Summary, blog.Status, blog.IsTop, publishedAt, blog.ID).Error; err != nil {
+			return err
+		}
 
-	tags, err := replacePostTags(tx, blog.ID, blog.Tags)
+		if err := tx.Exec(`
+			UPDATE post_contents
+			SET content_markdown = ?, content_text = ?, word_count = ?, updated_at = NOW()
+			WHERE post_id = ?
+		`, blog.Content, buildPlainTextFromMarkdown(blog.Content), countWordsFromMarkdown(blog.Content), blog.ID).Error; err != nil {
+			return err
+		}
+
+		tags, err := replacePostTags(tx, blog.ID, blog.Tags)
+		if err != nil {
+			return err
+		}
+		blog.Tags = tags
+
+		return nil
+	})
 	if err != nil {
-		return err
-	}
-	blog.Tags = tags
-
-	if err := tx.Commit().Error; err != nil {
 		return err
 	}
 
